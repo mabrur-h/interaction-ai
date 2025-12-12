@@ -1,11 +1,33 @@
 """Simple agent roster management - just a list of agent names."""
 
 import json
-import fcntl
 import time
+import sys
 from pathlib import Path
 
 from ...logging_config import logger
+
+# Cross-platform file locking
+if sys.platform == "win32":
+    import msvcrt
+    
+    def lock_file(file_obj):
+        """Lock file on Windows."""
+        msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+    
+    def unlock_file(file_obj):
+        """Unlock file on Windows."""
+        msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+    
+    def lock_file(file_obj):
+        """Lock file on Unix."""
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    
+    def unlock_file(file_obj):
+        """Unlock file on Unix."""
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
 
 
 class AgentRoster:
@@ -42,14 +64,14 @@ class AgentRoster:
 
                 # Open file and acquire exclusive lock
                 with open(self._roster_path, 'w') as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    lock_file(f)
                     try:
                         json.dump(self._agents, f, indent=2)
                         return
                     finally:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        unlock_file(f)
 
-            except BlockingIOError:
+            except (BlockingIOError, OSError):
                 # Lock is held by another process
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)

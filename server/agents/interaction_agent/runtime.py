@@ -89,7 +89,7 @@ class InteractionAgentRuntime:
             )
 
         except Exception as exc:
-            logger.error("Interaction agent failed", extra={"error": str(exc)})
+            logger.error("Interaction agent failed", extra={"error": str(exc)}, exc_info=True)
             return InteractionResult(
                 success=False,
                 response="",

@@ -80,3 +80,6 @@ The web app proxies API calls to the Python server using the values in `.env`, s
 
 ## License
 MIT — see [LICENSE](LICENSE).
+
+.\venv\Scripts\activate
+python -m server.server --reload

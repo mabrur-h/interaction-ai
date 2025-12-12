@@ -27,7 +27,7 @@ def _resolve_interaction_runtime() -> "InteractionAgentRuntime":
 
 DEFAULT_POLL_INTERVAL_SECONDS = 60.0
 DEFAULT_LOOKBACK_MINUTES = 10
-DEFAULT_MAX_RESULTS = 50
+DEFAULT_MAX_RESULTS = 20  # Keep low to avoid Composio API size limits with full payloads
 DEFAULT_SEEN_LIMIT = 300
 
 
@@ -119,7 +119,7 @@ class ImportantEmailWatcher:
         arguments = {
             "query": query,
             "include_payload": True,
-            "max_results": DEFAULT_MAX_RESULTS,
+            "max_results": 20,  # Reduced to avoid Composio API size limits
         }
 
         try:

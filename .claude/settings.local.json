@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.composio.dev)",
+      "WebFetch(domain:mcp.composio.dev)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

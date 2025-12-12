@@ -16,13 +16,23 @@ _SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": TASK_TOOL_NAME,
-            "description": "Expand a raw Gmail search request into multiple targeted queries and return relevant emails.",
+            "description": (
+                "Search Gmail for emails matching the user's request. This tool handles vague queries like "
+                "'important emails' or 'what's urgent' by translating them into appropriate Gmail searches. "
+                "For 'important' emails, it will search for: emails marked important by Gmail, unread messages, "
+                "emails requiring action (meetings, interviews, deadlines), security-sensitive messages (OTPs, "
+                "login alerts), and high-priority updates. Just pass the user's request directly - the tool "
+                "will figure out the right Gmail queries to run."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "search_query": {
                         "type": "string",
-                        "description": "Raw search request describing the emails to find.",
+                        "description": (
+                            "The user's email search request in natural language. Can be vague like "
+                            "'important emails today' or specific like 'emails from john@example.com about the project'."
+                        ),
                     },
                 },
                 "required": ["search_query"],

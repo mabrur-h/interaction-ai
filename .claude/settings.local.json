@@ -4,7 +4,9 @@
       "Bash(cat:*)",
       "WebSearch",
       "WebFetch(domain:docs.composio.dev)",
-      "WebFetch(domain:mcp.composio.dev)"
+      "WebFetch(domain:mcp.composio.dev)",
+      "Bash(python:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

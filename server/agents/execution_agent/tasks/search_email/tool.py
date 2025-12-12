@@ -68,7 +68,13 @@ def _validate_search_query(search_query: str) -> Optional[str]:
 
 def _validate_gmail_connection() -> Optional[str]:
     """Validate Gmail connection and return user ID or None."""
-    return get_active_gmail_user_id()
+    logger.info("[EMAIL_SEARCH] Validating Gmail connection...")
+    user_id = get_active_gmail_user_id()
+    if user_id:
+        logger.info(f"[EMAIL_SEARCH] Gmail connection valid, user ID: {user_id}")
+    else:
+        logger.error("[EMAIL_SEARCH] Gmail connection FAILED - no active user ID found")
+    return user_id
 
 
 def _validate_openrouter_config() -> Tuple[Optional[str], Optional[str]]:

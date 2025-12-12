@@ -32,12 +32,129 @@ def _set_active_gmail_user_id(user_id: Optional[str]) -> None:
     sanitized = _normalized(user_id)
     with _ACTIVE_USER_ID_LOCK:
         global _ACTIVE_USER_ID
+        old_value = _ACTIVE_USER_ID
         _ACTIVE_USER_ID = sanitized or None
+        if old_value != _ACTIVE_USER_ID:
+            logger.info(
+                "Gmail user ID updated",
+                extra={"old": old_value, "new": _ACTIVE_USER_ID},
+            )
 
 
 def get_active_gmail_user_id() -> Optional[str]:
     with _ACTIVE_USER_ID_LOCK:
-        return _ACTIVE_USER_ID
+        user_id = _ACTIVE_USER_ID
+
+    logger.info(f"[GMAIL_DEBUG] get_active_gmail_user_id called, current value: {user_id}")
+
+    # Auto-recover: try to find an active Gmail connection if not set
+    if user_id is None:
+        logger.info("[GMAIL_DEBUG] User ID is None - attempting auto-recovery from Composio")
+        user_id = _try_recover_gmail_connection()
+        if user_id:
+            logger.info(f"[GMAIL_DEBUG] Auto-recovery successful: {user_id}")
+        else:
+            logger.warning("[GMAIL_DEBUG] Auto-recovery failed - no active Gmail connection found")
+
+    return user_id
+
+
+def _try_recover_gmail_connection() -> Optional[str]:
+    """Attempt to find an active Gmail connection from Composio."""
+    try:
+        logger.info("[GMAIL_DEBUG] Querying Composio for active Gmail connections...")
+        client = _get_composio_client()
+
+        # Try multiple query approaches
+        queries_to_try = [
+            # Approach 1: Just toolkit, no status filter
+            {"toolkit_slugs": ["GMAIL"]},
+            # Approach 2: With ACTIVE status
+            {"toolkit_slugs": ["GMAIL"], "statuses": ["ACTIVE"]},
+            # Approach 3: With CONNECTED status
+            {"toolkit_slugs": ["GMAIL"], "statuses": ["CONNECTED"]},
+        ]
+
+        for query_params in queries_to_try:
+            logger.info(f"[GMAIL_DEBUG] Trying query: {query_params}")
+            try:
+                items = client.connected_accounts.list(**query_params)
+                logger.info(f"[GMAIL_DEBUG] Response type: {type(items)}")
+
+                # Log ALL attributes of the response to understand its structure
+                all_attrs = [a for a in dir(items) if not a.startswith('_')]
+                logger.info(f"[GMAIL_DEBUG] Response attributes: {all_attrs}")
+
+                # Try to get raw dict representation
+                if hasattr(items, "model_dump"):
+                    raw_dict = items.model_dump()
+                    logger.info(f"[GMAIL_DEBUG] model_dump keys: {list(raw_dict.keys())}")
+                    logger.info(f"[GMAIL_DEBUG] model_dump content: {str(raw_dict)[:500]}")
+                elif hasattr(items, "dict"):
+                    raw_dict = items.dict()
+                    logger.info(f"[GMAIL_DEBUG] dict keys: {list(raw_dict.keys())}")
+                elif hasattr(items, "__dict__"):
+                    logger.info(f"[GMAIL_DEBUG] __dict__: {items.__dict__}")
+
+                # Try various ways to access the items
+                data = None
+                if hasattr(items, "items") and callable(getattr(items, "items", None)):
+                    try:
+                        data = list(items.items())
+                        logger.info(f"[GMAIL_DEBUG] items() returned: {len(data)} items")
+                    except:
+                        pass
+                if data is None and hasattr(items, "items") and not callable(getattr(items, "items", None)):
+                    data = items.items
+                    logger.info(f"[GMAIL_DEBUG] items property: {type(data)}")
+                if data is None and hasattr(items, "data"):
+                    data = items.data
+                    logger.info(f"[GMAIL_DEBUG] data property: {type(data)}, value: {data}")
+                if data is None and hasattr(items, "connected_accounts"):
+                    data = items.connected_accounts
+                    logger.info(f"[GMAIL_DEBUG] connected_accounts property: {type(data)}")
+                if data is None and isinstance(items, dict):
+                    data = items.get("data") or items.get("items") or items.get("connected_accounts")
+                if data is None and isinstance(items, list):
+                    data = items
+
+                logger.info(f"[GMAIL_DEBUG] Final extracted data type: {type(data)}, length: {len(data) if data else 0}")
+
+                if data and len(data) > 0:
+                    # Log all accounts found
+                    for i, acc in enumerate(data[:3]):  # Log first 3
+                        acc_status = getattr(acc, "status", None) or (acc.get("status") if isinstance(acc, dict) else "unknown")
+                        acc_user = getattr(acc, "user_id", None) or (acc.get("user_id") if isinstance(acc, dict) else "unknown")
+                        logger.info(f"[GMAIL_DEBUG] Account {i}: status={acc_status}, user_id={acc_user}")
+
+                    # Use the first account
+                    account = data[0]
+                    account_user_id = None
+
+                    if hasattr(account, "user_id"):
+                        account_user_id = getattr(account, "user_id", None)
+                    elif isinstance(account, dict):
+                        account_user_id = account.get("user_id")
+
+                    if account_user_id:
+                        sanitized = _normalized(account_user_id)
+                        if sanitized:
+                            _set_active_gmail_user_id(sanitized)
+                            logger.info(f"[GMAIL_DEBUG] Gmail connection auto-recovered with user_id: {sanitized}")
+                            return sanitized
+
+            except Exception as inner_exc:
+                logger.debug(f"[GMAIL_DEBUG] Query {query_params} failed: {inner_exc}")
+                continue
+
+        logger.warning("[GMAIL_DEBUG] No Gmail connections found after trying all query approaches")
+
+    except Exception as exc:
+        logger.error(f"[GMAIL_DEBUG] Gmail auto-recovery exception: {type(exc).__name__}: {exc}")
+        import traceback
+        logger.error(f"[GMAIL_DEBUG] Traceback: {traceback.format_exc()}")
+
+    return None
 
 
 def _gmail_import_client():
@@ -206,6 +323,7 @@ def _fetch_profile_from_composio(user_id: Optional[str]) -> Optional[Dict[str, A
 # Start Gmail OAuth connection process and return redirect URL
 def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONResponse:
     auth_config_id = payload.auth_config_id or settings.composio_gmail_auth_config_id or ""
+    logger.info(f"[GMAIL_CONNECT] Initiating connection with auth_config_id: {auth_config_id}")
     if not auth_config_id:
         return error_response(
             "Missing auth_config_id. Set COMPOSIO_GMAIL_AUTH_CONFIG_ID or pass auth_config_id.",
@@ -213,11 +331,14 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
         )
 
     user_id = payload.user_id or f"web-{os.getpid()}"
+    logger.info(f"[GMAIL_CONNECT] Using user_id: {user_id}")
     _set_active_gmail_user_id(user_id)
     _clear_cached_profile(user_id)
     try:
         client = _get_composio_client(settings)
-        req = client.connected_accounts.initiate(user_id=user_id, auth_config_id=auth_config_id)
+        logger.info(f"[GMAIL_CONNECT] Calling connected_accounts.initiate...")
+        req = client.connected_accounts.initiate(user_id=user_id, auth_config_id=auth_config_id, allow_multiple=True)
+        logger.info(f"[GMAIL_CONNECT] Initiate response: {repr(req)[:300]}")
         data = {
             "ok": True,
             "redirect_url": getattr(req, "redirect_url", None) or getattr(req, "redirectUrl", None),
@@ -238,6 +359,7 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
 def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
     connection_request_id = _normalized(payload.connection_request_id)
     user_id = _normalized(payload.user_id)
+    logger.info(f"[GMAIL_STATUS] Checking status for user_id={user_id}, connection_request_id={connection_request_id}")
 
     if not connection_request_id and not user_id:
         return error_response(
@@ -250,23 +372,32 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
         account: Any = None
         if connection_request_id:
             try:
+                logger.info(f"[GMAIL_STATUS] Waiting for connection: {connection_request_id}")
                 account = client.connected_accounts.wait_for_connection(connection_request_id, timeout=2.0)
-            except Exception:
+                logger.info(f"[GMAIL_STATUS] wait_for_connection result: {repr(account)[:200]}")
+            except Exception as e:
+                logger.info(f"[GMAIL_STATUS] wait_for_connection failed: {e}, trying get...")
                 try:
                     account = client.connected_accounts.get(connection_request_id)
-                except Exception:
+                    logger.info(f"[GMAIL_STATUS] get result: {repr(account)[:200]}")
+                except Exception as e2:
+                    logger.info(f"[GMAIL_STATUS] get also failed: {e2}")
                     account = None
         if account is None and user_id:
             try:
+                logger.info(f"[GMAIL_STATUS] Listing accounts for user_id={user_id}")
                 items = client.connected_accounts.list(
                     user_ids=[user_id], toolkit_slugs=["GMAIL"], statuses=["ACTIVE"]
                 )
+                logger.info(f"[GMAIL_STATUS] list result: {repr(items)[:200]}")
                 data = getattr(items, "data", None)
                 if data is None and isinstance(items, dict):
                     data = items.get("data")
+                logger.info(f"[GMAIL_STATUS] extracted data length: {len(data) if data else 0}")
                 if data:
                     account = data[0]
-            except Exception:
+            except Exception as e:
+                logger.info(f"[GMAIL_STATUS] list failed: {e}")
                 account = None
         status_value = None
         email = None

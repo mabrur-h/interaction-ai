@@ -1,6 +1,7 @@
 """Simplified configuration management."""
 
 import os
+import secrets
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
@@ -29,7 +30,7 @@ _load_env_file()
 
 
 DEFAULT_APP_NAME = "OpenPoke Server"
-DEFAULT_APP_VERSION = "0.3.0"
+DEFAULT_APP_VERSION = "0.4.0"
 
 
 def _env_int(name: str, fallback: int) -> int:
@@ -37,6 +38,18 @@ def _env_int(name: str, fallback: int) -> int:
         return int(os.getenv(name, str(fallback)))
     except (TypeError, ValueError):
         return fallback
+
+
+def _get_database_url() -> str:
+    """Get database URL, converting Railway's postgres:// to postgresql+asyncpg://."""
+    url = os.getenv("DATABASE_URL", "")
+    if url:
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        if url.startswith("postgresql://") and "+asyncpg" not in url:
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+    return "postgresql+asyncpg://openpoke:openpoke_dev_password@localhost:5432/openpoke"
 
 
 class Settings(BaseModel):
@@ -49,6 +62,39 @@ class Settings(BaseModel):
     # Server runtime
     server_host: str = Field(default=os.getenv("OPENPOKE_HOST", "0.0.0.0"))
     server_port: int = Field(default=_env_int("OPENPOKE_PORT", 8001))
+
+    # Database (PostgreSQL)
+    database_url: str = Field(default_factory=_get_database_url)
+
+    # Redis
+    redis_url: str = Field(default=os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+
+    # Google OAuth
+    google_client_id: Optional[str] = Field(default=os.getenv("GOOGLE_CLIENT_ID"))
+    google_client_secret: Optional[str] = Field(default=os.getenv("GOOGLE_CLIENT_SECRET"))
+    google_redirect_uri: str = Field(
+        default=os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/auth/callback")
+    )
+
+    # JWT Authentication
+    jwt_secret_key: str = Field(
+        default=os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
+    )
+    jwt_algorithm: str = Field(default=os.getenv("JWT_ALGORITHM", "HS256"))
+    jwt_access_token_expire_minutes: int = Field(
+        default=_env_int("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30)
+    )
+    jwt_refresh_token_expire_days: int = Field(
+        default=_env_int("JWT_REFRESH_TOKEN_EXPIRE_DAYS", 7)
+    )
+
+    # Celery
+    celery_broker_url: str = Field(
+        default=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
+    )
+    celery_result_backend: str = Field(
+        default=os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+    )
 
     # LLM model selection (using OpenRouter model IDs)
     interaction_agent_model: str = Field(default="google/gemini-2.5-flash")
@@ -71,6 +117,9 @@ class Settings(BaseModel):
     # Summarisation controls
     conversation_summary_threshold: int = Field(default=100)
     conversation_summary_tail_size: int = Field(default=10)
+
+    # Frontend URL (for OAuth redirects)
+    frontend_url: str = Field(default=os.getenv("FRONTEND_URL", "http://localhost:3000"))
 
     @property
     def cors_allow_origins(self) -> List[str]:

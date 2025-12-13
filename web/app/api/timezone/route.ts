@@ -14,18 +14,56 @@ export async function POST(req: Request) {
   }
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const url = `${serverBase.replace(/\/$/, '')}/api/v1/meta/timezone`;
+  const url = `${serverBase.replace(/\/$/, '')}/api/v2/meta/timezone`;
+
+  // Forward Authorization header from client
+  const authHeader = req.headers.get('Authorization');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
 
   try {
     const upstream = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ timezone }),
     });
-    
+
     if (!upstream.ok) {
       const text = await upstream.text();
       return new Response(text || 'Failed to set timezone', { status: upstream.status });
+    }
+
+    const data = await upstream.json();
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (e: any) {
+    return new Response(e?.message || 'Server error', { status: 502 });
+  }
+}
+
+export async function GET(req: Request) {
+  const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
+  const url = `${serverBase.replace(/\/$/, '')}/api/v2/meta/timezone`;
+
+  // Forward Authorization header from client
+  const authHeader = req.headers.get('Authorization');
+  const headers: Record<string, string> = {};
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
+
+  try {
+    const upstream = await fetch(url, { method: 'GET', headers });
+
+    if (!upstream.ok) {
+      const text = await upstream.text();
+      return new Response(text || 'Failed to get timezone', { status: upstream.status });
     }
 
     const data = await upstream.json();

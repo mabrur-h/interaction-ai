@@ -9,7 +9,9 @@
       "Bash(dir:*)",
       "Bash(npx tsc:*)",
       "Bash(source:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(timeout 15 python:*)"
     ],
     "deny": [],
     "ask": []

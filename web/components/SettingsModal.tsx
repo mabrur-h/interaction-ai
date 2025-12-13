@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getAccessToken } from '@/lib/api';
 
 export type Settings = {
   timezone: string;
@@ -229,9 +230,12 @@ export default function SettingsModal({
       setConnectingGmail(true);
       setGmailStatusMessage('');
       const userId = ensureUserId();
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/api/gmail/connect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ userId }),
       });
       const data = await resp.json().catch(() => ({}));
@@ -278,9 +282,12 @@ export default function SettingsModal({
     try {
       setIsRefreshingGmail(true);
       setGmailStatusMessage('Refreshing Gmail status…');
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/api/gmail/status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ userId, connectionRequestId }),
       });
       const data = await resp.json().catch(() => ({}));
@@ -351,9 +358,12 @@ export default function SettingsModal({
       setGmailStatusMessage('Disconnecting Gmail…');
       const userId = readStoredUserId();
       const connectionRequestId = readStoredGmailConnectionRequestId();
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/api/gmail/disconnect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ userId, connectionRequestId }),
       });
       const data = await resp.json().catch(() => ({}));
@@ -387,9 +397,12 @@ export default function SettingsModal({
       setConnectingCalendar(true);
       setCalendarStatusMessage('');
       const userId = ensureUserId();
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/api/calendar/connect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ userId }),
       });
       const data = await resp.json().catch(() => ({}));
@@ -434,9 +447,12 @@ export default function SettingsModal({
     try {
       setIsRefreshingCalendar(true);
       setCalendarStatusMessage('Refreshing Calendar status…');
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/api/calendar/status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ userId, connectionRequestId }),
       });
       const data = await resp.json().catch(() => ({}));
@@ -499,9 +515,12 @@ export default function SettingsModal({
       setCalendarStatusMessage('Disconnecting Calendar…');
       const userId = readStoredUserId();
       const connectionRequestId = readStoredCalendarConnectionRequestId();
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/api/calendar/disconnect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ userId, connectionRequestId }),
       });
       const data = await resp.json().catch(() => ({}));

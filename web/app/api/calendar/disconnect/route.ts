@@ -1,27 +1,24 @@
 export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
-  let body: any = {};
-  try {
-    body = await req.json();
-  } catch {}
-
-  const userId = body?.userId || '';
-  const connectionId = body?.connectionId || '';
-  const connectionRequestId = body?.connectionRequestId || '';
-
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const url = `${serverBase.replace(/\/$/, '')}/api/v1/calendar/disconnect`;
-  const payload: any = {};
-  if (userId) payload.user_id = userId;
-  if (connectionId) payload.connection_id = connectionId;
-  if (connectionRequestId) payload.connection_request_id = connectionRequestId;
+  const url = `${serverBase.replace(/\/$/, '')}/api/v2/calendar/disconnect`;
+
+  // Forward Authorization header from client
+  const authHeader = req.headers.get('Authorization');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
 
   try {
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(payload),
+      headers,
+      body: JSON.stringify({}),
     });
     const data = await resp.json().catch(() => ({}));
     return new Response(JSON.stringify(data), {

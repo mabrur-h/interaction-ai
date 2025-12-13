@@ -46,10 +46,14 @@ async def handle_chat_request(
     async def _run_interaction() -> None:
         # Import here to avoid circular imports
         from ...database.session import async_session_factory
+        from ...services.oauth_bridge import sync_oauth_connections_for_user
 
         # Create a new session for the background task
         async with async_session_factory() as session:
             try:
+                # Sync OAuth connections from DB to V1 singletons for execution agents
+                await sync_oauth_connections_for_user(session, user_id)
+
                 # Create user-scoped conversation service with the new session
                 # auto_commit=True ensures messages are visible to polling immediately
                 conv_repo = ConversationRepository(session, user_id)

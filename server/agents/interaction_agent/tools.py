@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from ...logging_config import logger
-from ...services.conversation import get_conversation_log
 from ...services.execution import get_agent_roster, get_execution_agent_logs
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
@@ -150,12 +149,9 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     )
 
 
-# Send immediate message to user and record in conversation history
+# Send immediate message to user - runtime handles recording to database
 def send_message_to_user(message: str) -> ToolResult:
-    """Record a user-visible reply in the conversation log."""
-    log = get_conversation_log()
-    log.record_reply(message)
-
+    """Return a user-visible message. The runtime records this to the database."""
     return ToolResult(
         success=True,
         payload={"status": "delivered"},
@@ -164,19 +160,15 @@ def send_message_to_user(message: str) -> ToolResult:
     )
 
 
-# Format and record email draft for user review
+# Format email draft for user review - runtime handles recording to database
 def send_draft(
     to: str,
     subject: str,
     body: str,
 ) -> ToolResult:
-    """Record a draft update in the conversation log for the interaction agent."""
-    log = get_conversation_log()
-
+    """Return a draft message. The runtime records this to the database."""
     message = f"To: {to}\nSubject: {subject}\n\n{body}"
-
-    log.record_reply(message)
-    logger.info(f"Draft recorded for: {to}")
+    logger.info(f"Draft prepared for: {to}")
 
     return ToolResult(
         success=True,
@@ -185,19 +177,15 @@ def send_draft(
             "to": to,
             "subject": subject,
         },
+        user_message=message,
         recorded_reply=True,
     )
 
 
-# Record silent wait state to avoid duplicate responses
+# Signal wait state to avoid duplicate responses - no recording needed
 def wait(reason: str) -> ToolResult:
-    """Wait silently and add a wait log entry that is not visible to the user."""
-    log = get_conversation_log()
-    
-    # Record a dedicated wait entry so the UI knows to ignore it
-    log.record_wait(reason)
-    
-
+    """Wait silently without sending a user-visible message."""
+    logger.debug(f"Wait tool invoked: {reason}")
     return ToolResult(
         success=True,
         payload={

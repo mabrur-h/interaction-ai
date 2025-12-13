@@ -5,17 +5,26 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {}
-  const userId = body?.userId || '';
   const authConfigId = body?.authConfigId || '';
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const url = `${serverBase.replace(/\/$/, '')}/api/v1/calendar/connect`;
+  const url = `${serverBase.replace(/\/$/, '')}/api/v2/calendar/connect`;
+
+  // Forward Authorization header from client
+  const authHeader = req.headers.get('Authorization');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
 
   try {
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ user_id: userId, auth_config_id: authConfigId }),
+      headers,
+      body: JSON.stringify({ auth_config_id: authConfigId || undefined }),
     });
     const data = await resp.json().catch(() => ({}));
     return new Response(JSON.stringify(data), {

@@ -34,7 +34,8 @@ export async function POST(req: Request) {
   }
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const serverPath = process.env.PY_CHAT_PATH || '/api/v1/chat/send';
+  // Use V2 API endpoint with authentication
+  const serverPath = '/api/v2/chat/send';
   const url = `${serverBase.replace(/\/$/, '')}${serverPath}`;
 
   const payload = {
@@ -43,10 +44,20 @@ export async function POST(req: Request) {
     stream: false,
   };
 
+  // Forward authorization header from client
+  const authHeader = req.headers.get('Authorization');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'text/plain, */*',
+  };
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
+
   try {
     const upstream = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/plain, */*' },
+      headers,
       body: JSON.stringify(payload),
     });
     const text = await upstream.text();

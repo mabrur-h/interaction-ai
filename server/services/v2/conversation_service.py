@@ -24,17 +24,25 @@ class ConversationService:
         self,
         conversation_repo: ConversationRepository,
         working_memory_repo: WorkingMemoryRepository,
+        auto_commit: bool = True,
     ):
         """Initialize with repositories.
 
         Args:
             conversation_repo: ConversationRepository instance (user-scoped)
             working_memory_repo: WorkingMemoryRepository instance (user-scoped)
+            auto_commit: If True, commit after each message is recorded
         """
         self._conv_repo = conversation_repo
         self._wm_repo = working_memory_repo
         self._message_repo: Optional[MessageRepository] = None
         self._conversation: Optional[Conversation] = None
+        self._auto_commit = auto_commit
+
+    @property
+    def session(self):
+        """Get the underlying database session."""
+        return self._conv_repo.session
 
     async def _ensure_conversation(self) -> Conversation:
         """Ensure we have an active conversation.
@@ -78,6 +86,9 @@ class ConversationService:
             else f"[{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}] User: {content}"
         )
 
+        if self._auto_commit:
+            await self.session.commit()
+
         return message
 
     async def record_agent_message(self, content: str, agent_name: Optional[str] = None) -> Message:
@@ -101,6 +112,9 @@ class ConversationService:
             else f"[{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {prefix}: {content}"
         )
 
+        if self._auto_commit:
+            await self.session.commit()
+
         return message
 
     async def record_reply(self, content: str) -> Message:
@@ -121,6 +135,9 @@ class ConversationService:
             if len(content) > 200
             else f"[{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}] Poke: {content}"
         )
+
+        if self._auto_commit:
+            await self.session.commit()
 
         return message
 

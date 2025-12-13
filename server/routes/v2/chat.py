@@ -22,13 +22,10 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 async def chat_send(
     payload: ChatRequest,
     user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session),
 ) -> JSONResponse:
     """Handle incoming chat messages and route them to the interaction agent."""
-    # For now, we still use the legacy handler but will need to update it
-    # to use the new v2 services with user context
-    from server.services import handle_chat_request
-    return await handle_chat_request(payload)
+    from server.services.conversation.chat_handler import handle_chat_request
+    return await handle_chat_request(payload, user.id)
 
 
 @router.get("/history", response_model=ChatHistoryResponse)

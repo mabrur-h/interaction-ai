@@ -6,7 +6,10 @@
       "WebFetch(domain:docs.composio.dev)",
       "WebFetch(domain:mcp.composio.dev)",
       "Bash(python:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npx tsc:*)",
+      "Bash(source:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

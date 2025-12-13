@@ -1,3 +1,4 @@
 """OpenPoke Python server package."""
 
-from .app import app
+# Don't auto-import app to avoid circular imports during migrations
+# Use: from server.app import app

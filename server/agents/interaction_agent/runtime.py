@@ -2,14 +2,16 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 from .agent import build_system_prompt, prepare_message_with_history
 from .tools import ToolResult, get_tool_schemas, handle_tool_call
 from ...config import get_settings
-from ...services.conversation import get_conversation_log, get_working_memory_log
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
+
+if TYPE_CHECKING:
+    from ...services.v2 import ConversationService
 
 
 @dataclass
@@ -47,13 +49,12 @@ class InteractionAgentRuntime:
     MAX_TOOL_ITERATIONS = 8
 
     # Initialize interaction agent runtime with settings and service dependencies
-    def __init__(self) -> None:
+    def __init__(self, conversation_service: "ConversationService") -> None:
         settings = get_settings()
         self.api_key = settings.openrouter_api_key
         self.model = settings.interaction_agent_model
         self.settings = settings
-        self.conversation_log = get_conversation_log()
-        self.working_memory_log = get_working_memory_log()
+        self.conversation_service = conversation_service
         self.tool_schemas = get_tool_schemas()
 
         if not self.api_key:
@@ -66,8 +67,8 @@ class InteractionAgentRuntime:
         """Handle a user-authored message."""
 
         try:
-            transcript_before = self._load_conversation_transcript()
-            self.conversation_log.record_user_message(user_message)
+            transcript_before = await self._load_conversation_transcript()
+            await self.conversation_service.record_user_message(user_message)
 
             system_prompt = build_system_prompt()
             messages = prepare_message_with_history(
@@ -78,9 +79,12 @@ class InteractionAgentRuntime:
             summary = await self._run_interaction_loop(system_prompt, messages)
 
             final_response = self._finalize_response(summary)
+            logger.info(f"Final response determined: {len(final_response)} chars, user_messages: {len(summary.user_messages)}")
 
-            if final_response and not summary.user_messages:
-                self.conversation_log.record_reply(final_response)
+            if final_response:
+                logger.info("Recording reply to database")
+                await self.conversation_service.record_reply(final_response)
+                logger.info("Reply recorded successfully")
 
             return InteractionResult(
                 success=True,
@@ -101,8 +105,8 @@ class InteractionAgentRuntime:
         """Process a status update emitted by an execution agent."""
 
         try:
-            transcript_before = self._load_conversation_transcript()
-            self.conversation_log.record_agent_message(agent_message)
+            transcript_before = await self._load_conversation_transcript()
+            await self.conversation_service.record_agent_message(agent_message)
 
             system_prompt = build_system_prompt()
             messages = prepare_message_with_history(
@@ -113,9 +117,12 @@ class InteractionAgentRuntime:
             summary = await self._run_interaction_loop(system_prompt, messages)
 
             final_response = self._finalize_response(summary)
+            logger.info(f"Agent message final response: {len(final_response)} chars")
 
-            if final_response and not summary.user_messages:
-                self.conversation_log.record_reply(final_response)
+            if final_response:
+                logger.info("Recording agent reply to database")
+                await self.conversation_service.record_reply(final_response)
+                logger.info("Agent reply recorded successfully")
 
             return InteractionResult(
                 success=True,
@@ -191,12 +198,12 @@ class InteractionAgentRuntime:
         return summary
 
     # Load conversation history, preferring summarized version if available
-    def _load_conversation_transcript(self) -> str:
+    async def _load_conversation_transcript(self) -> str:
         if self.settings.summarization_enabled:
-            rendered = self.working_memory_log.render_transcript()
-            if rendered.strip():
-                return rendered
-        return self.conversation_log.load_transcript()
+            summary = await self.conversation_service.get_working_memory_summary()
+            if summary and summary.strip():
+                return summary
+        return await self.conversation_service.load_transcript()
 
     # Execute API call to OpenRouter with system prompt, messages, and tool schemas
     async def _make_llm_call(

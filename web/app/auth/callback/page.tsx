@@ -1,20 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { handleAuthCallback, useAuth } from '@/contexts/AuthContext';
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { refreshUser } = useAuth();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const processedRef = useRef(false);
 
   useEffect(() => {
+    // Prevent double processing in React strict mode
+    if (processedRef.current) return;
+    processedRef.current = true;
+
     const processCallback = async () => {
+      // Read directly from window.location to avoid Next.js searchParams timing issues
+      const params = new URLSearchParams(window.location.search);
+
       // Check for error in URL
-      const error = searchParams.get('error');
+      const error = params.get('error');
       if (error) {
         setStatus('error');
         setErrorMessage(
@@ -27,7 +34,17 @@ export default function AuthCallbackPage() {
         return;
       }
 
-      // Try to handle the callback (extract tokens from URL)
+      // Check if we have tokens in URL
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (!accessToken || !refreshToken) {
+        setStatus('error');
+        setErrorMessage('No authentication tokens found in the response.');
+        return;
+      }
+
+      // Try to handle the callback (extract and store tokens)
       const success = handleAuthCallback();
 
       if (success) {
@@ -40,12 +57,12 @@ export default function AuthCallbackPage() {
         }, 1000);
       } else {
         setStatus('error');
-        setErrorMessage('No authentication tokens found in the response.');
+        setErrorMessage('Failed to process authentication tokens.');
       }
     };
 
     processCallback();
-  }, [searchParams, router, refreshUser]);
+  }, [router, refreshUser]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-brand-100 p-4">

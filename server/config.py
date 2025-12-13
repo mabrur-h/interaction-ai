@@ -73,7 +73,7 @@ class Settings(BaseModel):
     google_client_id: Optional[str] = Field(default=os.getenv("GOOGLE_CLIENT_ID"))
     google_client_secret: Optional[str] = Field(default=os.getenv("GOOGLE_CLIENT_SECRET"))
     google_redirect_uri: str = Field(
-        default=os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/auth/callback")
+        default=os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8001/api/v1/auth/google/callback")
     )
 
     # JWT Authentication

@@ -1,12 +1,33 @@
 """Alembic environment configuration."""
 
 import asyncio
+import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+# Load .env file before importing config
+def _load_env_file() -> None:
+    """Load .env from root directory if present."""
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                key, value = stripped.split("=", 1)
+                key, value = key.strip(), value.strip().strip("'\"")
+                if key and value and key not in os.environ:
+                    os.environ[key] = value
+    except Exception:
+        pass
+
+_load_env_file()
 
 from server.database.config import get_database_url
 from server.database.models import Base

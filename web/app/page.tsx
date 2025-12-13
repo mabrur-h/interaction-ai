@@ -1,15 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import SettingsModal, { useSettings } from '@/components/SettingsModal';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ErrorBanner } from '@/components/chat/ErrorBanner';
 import { useAutoScroll } from '@/components/chat/useAutoScroll';
+import { useAuth } from '@/contexts/AuthContext';
+import { getAccessToken } from '@/lib/api';
 import type { ChatBubble } from '@/components/chat/types';
-
-const POLL_INTERVAL_MS = 1500;
 
 const formatEscapeCharacters = (text: string): string => {
   return text
@@ -38,6 +39,8 @@ const toBubbles = (payload: any): ChatBubble[] => {
 
 export default function Page() {
   const { settings, setSettings } = useSettings();
+  const { isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatBubble[]>([]);
@@ -47,12 +50,18 @@ export default function Page() {
     items: messages,
     isWaiting: isWaitingForResponse,
   });
-  const openSettings = useCallback(() => setOpen(true), [setOpen]);
-  const closeSettings = useCallback(() => setOpen(false), [setOpen]);
+
+  const openSettings = useCallback(() => setOpen(true), []);
+  const closeSettings = useCallback(() => setOpen(false), []);
 
   const loadHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/chat/history', { cache: 'no-store' });
+      const token = getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch('/api/chat/history', { headers, cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       setMessages(toBubbles(data));
@@ -61,51 +70,6 @@ export default function Page() {
       console.error('Failed to load chat history', err);
     }
   }, []);
-
-  useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
-
-  // Detect and store browser timezone on first load
-  useEffect(() => {
-    const detectAndStoreTimezone = async () => {
-      // Only run if timezone not already stored
-      if (settings.timezone) return;
-      
-      try {
-        const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        
-        // Send to server
-        const response = await fetch('/api/timezone', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ timezone: browserTimezone }),
-        });
-        
-        if (response.ok) {
-          // Update local settings
-          setSettings({ ...settings, timezone: browserTimezone });
-        }
-      } catch (error) {
-        // Fail silently - timezone detection is not critical
-        console.debug('Timezone detection failed:', error);
-      }
-    };
-
-    void detectAndStoreTimezone();
-  }, [settings, setSettings]);
-
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void loadHistory();
-    }, POLL_INTERVAL_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [loadHistory]);
-
-  const canSubmit = input.trim().length > 0;
-  const inputPlaceholder = 'Type a message…';
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -127,9 +91,14 @@ export default function Page() {
       });
 
       try {
+        const token = getAccessToken();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
         const res = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             messages: [{ role: 'user', content: trimmed }],
           }),
@@ -150,21 +119,26 @@ export default function Page() {
         // Poll until we get the assistant's response
         let pollAttempts = 0;
         const maxPollAttempts = 30; // Max 30 attempts (30 seconds)
-        
+
         const pollForAssistantResponse = async () => {
           pollAttempts++;
-          
+
           try {
-            const res = await fetch('/api/chat/history', { cache: 'no-store' });
+            const pollToken = getAccessToken();
+            const pollHeaders: Record<string, string> = {};
+            if (pollToken) {
+              pollHeaders['Authorization'] = `Bearer ${pollToken}`;
+            }
+            const res = await fetch('/api/chat/history', { headers: pollHeaders, cache: 'no-store' });
             if (res.ok) {
               const data = await res.json();
               const currentMessages = toBubbles(data);
-              
+
               // Check if the last message is from assistant and contains our user message
               const lastMessage = currentMessages[currentMessages.length - 1];
               const hasUserMessage = currentMessages.some(msg => msg.text === trimmed && msg.role === 'user');
               const hasAssistantResponse = lastMessage?.role === 'assistant' && hasUserMessage;
-              
+
               if (hasAssistantResponse) {
                 // We got the assistant response, update messages and stop loading
                 setMessages(currentMessages);
@@ -175,7 +149,7 @@ export default function Page() {
           } catch (err) {
             console.error('Error polling for response:', err);
           }
-          
+
           // Continue polling if we haven't exceeded max attempts
           if (pollAttempts < maxPollAttempts) {
             setTimeout(pollForAssistantResponse, 1000); // Poll every second
@@ -185,7 +159,7 @@ export default function Page() {
             await loadHistory();
           }
         };
-        
+
         // Start polling after a brief delay
         setTimeout(pollForAssistantResponse, 1000);
       }
@@ -195,7 +169,12 @@ export default function Page() {
 
   const handleClearHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/chat/history', { method: 'DELETE' });
+      const token = getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch('/api/chat/history', { method: 'DELETE', headers });
       if (!res.ok) {
         console.error('Failed to clear chat history', res.statusText);
         return;
@@ -204,14 +183,20 @@ export default function Page() {
     } catch (err) {
       console.error('Failed to clear chat history', err);
     }
-  }, [setMessages]);
+  }, []);
 
   const triggerClearHistory = useCallback(() => {
     void handleClearHistory();
   }, [handleClearHistory]);
 
+  const handleLogout = useCallback(async () => {
+    await logout();
+    router.push('/login');
+  }, [logout, router]);
+
   const handleSubmit = useCallback(async () => {
-    if (!canSubmit) return;
+    const trimmed = input.trim();
+    if (!trimmed) return;
     const value = input;
     setInput('');
     try {
@@ -219,18 +204,104 @@ export default function Page() {
     } catch {
       setInput(value);
     }
-  }, [canSubmit, input, sendMessage, setInput]);
+  }, [input, sendMessage]);
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
-  }, [setInput]);
+  }, []);
 
-  const clearError = useCallback(() => setError(null), [setError]);
+  const clearError = useCallback(() => setError(null), []);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/login');
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  // Load history on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      void loadHistory();
+    }
+  }, [loadHistory, isAuthenticated]);
+
+  // Poll for new messages (e.g., from scheduled triggers/reminders)
+  // Only polls when tab is visible, at a reasonable interval
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const BACKGROUND_POLL_MS = 30000; // 30 seconds - enough for reminders, not wasteful
+
+    const poll = () => {
+      if (document.visibilityState === 'visible' && !isWaitingForResponse) {
+        void loadHistory();
+      }
+    };
+
+    const intervalId = window.setInterval(poll, BACKGROUND_POLL_MS);
+
+    // Also refresh when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadHistory();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadHistory, isWaitingForResponse, isAuthenticated]);
+
+  // Detect and store browser timezone on first load
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const detectAndStoreTimezone = async () => {
+      // Only run if timezone not already stored
+      if (settings.timezone) return;
+
+      try {
+        const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        // Send to server
+        const response = await fetch('/api/timezone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timezone: browserTimezone }),
+        });
+
+        if (response.ok) {
+          // Update local settings
+          setSettings({ ...settings, timezone: browserTimezone });
+        }
+      } catch (error) {
+        // Fail silently - timezone detection is not critical
+        console.debug('Timezone detection failed:', error);
+      }
+    };
+
+    void detectAndStoreTimezone();
+  }, [settings, setSettings, isAuthenticated]);
+
+  // Show loading while checking auth
+  if (authLoading || !isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600"></div>
+      </div>
+    );
+  }
+
+  const canSubmit = input.trim().length > 0;
+  const inputPlaceholder = 'Type a message…';
 
   return (
     <main className="chat-bg min-h-screen p-4 sm:p-6">
       <div className="chat-wrap flex flex-col">
-        <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} />
+        <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} onLogout={handleLogout} />
 
         <div className="card flex-1 overflow-hidden">
           <ChatMessages

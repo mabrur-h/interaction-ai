@@ -19,10 +19,29 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...agents.interaction_agent.runtime import InteractionAgentRuntime
 
 
-def _resolve_interaction_runtime() -> "InteractionAgentRuntime":
+async def _resolve_interaction_runtime() -> Optional["InteractionAgentRuntime"]:
+    """Create an InteractionAgentRuntime with proper database context."""
     from ...agents.interaction_agent.runtime import InteractionAgentRuntime
+    from ...database.session import async_session_factory
+    from ...repositories.conversations import ConversationRepository
+    from ...repositories.working_memory import WorkingMemoryRepository
+    from ...services.v2 import ConversationService
+    from sqlalchemy import select
+    from ...database.models import User
 
-    return InteractionAgentRuntime()
+    async with async_session_factory() as session:
+        # Get the first user from database
+        result = await session.execute(select(User).limit(1))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.error("No user found in database for email notification")
+            return None
+
+        conv_repo = ConversationRepository(session, user.id)
+        wm_repo = WorkingMemoryRepository(session, user.id)
+        conv_service = ConversationService(conv_repo, wm_repo, auto_commit=True)
+
+        return InteractionAgentRuntime(conv_service)
 
 
 DEFAULT_POLL_INTERVAL_SECONDS = 60.0
@@ -220,7 +239,10 @@ class ImportantEmailWatcher:
         self._complete_poll(user_now)
 
     async def _dispatch_summary(self, summary: str) -> None:
-        runtime = _resolve_interaction_runtime()
+        runtime = await _resolve_interaction_runtime()
+        if runtime is None:
+            logger.error("Cannot dispatch email summary - no user context available")
+            return
         try:
             contextualized = f"Important email watcher notification:\n{summary}"
             await runtime.handle_agent_message(contextualized)

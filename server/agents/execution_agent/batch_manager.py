@@ -182,12 +182,33 @@ class ExecutionBatchManager:
         """Send the aggregated execution summary to the interaction agent."""
 
         from ..interaction_agent.runtime import InteractionAgentRuntime
+        from ...database.session import async_session_factory
+        from ...repositories.conversations import ConversationRepository
+        from ...repositories.working_memory import WorkingMemoryRepository
+        from ...services.v2 import ConversationService
 
-        runtime = InteractionAgentRuntime()
+        async def _run_agent_message():
+            async with async_session_factory() as session:
+                # Get the first user from database (assumes single-user or uses most recent)
+                from sqlalchemy import select
+                from ...database.models import User
+                result = await session.execute(select(User).limit(1))
+                user = result.scalar_one_or_none()
+                if not user:
+                    logger.error("No user found in database for agent message dispatch")
+                    return
+
+                conv_repo = ConversationRepository(session, user.id)
+                wm_repo = WorkingMemoryRepository(session, user.id)
+                conv_service = ConversationService(conv_repo, wm_repo, auto_commit=True)
+
+                runtime = InteractionAgentRuntime(conv_service)
+                await runtime.handle_agent_message(payload)
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            asyncio.run(runtime.handle_agent_message(payload))
+            asyncio.run(_run_agent_message())
             return
 
-        loop.create_task(runtime.handle_agent_message(payload))
+        loop.create_task(_run_agent_message())

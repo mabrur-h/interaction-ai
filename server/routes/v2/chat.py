@@ -9,11 +9,10 @@ from server.database import User
 from server.database.session import get_async_session
 from server.models import ChatHistoryClearResponse, ChatHistoryResponse, ChatRequest
 from server.repositories.conversations import ConversationRepository
-from server.repositories.triggers import TriggerRepository
 from server.repositories.execution_logs import ExecutionLogRepository
 from server.repositories.agent_roster import AgentRosterRepository
 from server.repositories.working_memory import WorkingMemoryRepository
-from server.services.v2 import ConversationService, TriggerService
+from server.services.v2 import ConversationService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -53,10 +52,6 @@ async def clear_history(
     wm_repo = WorkingMemoryRepository(session, user.id)
     conv_service = ConversationService(conv_repo, wm_repo)
     await conv_service.clear()
-
-    # Clear triggers
-    trigger_repo = TriggerRepository(session, user.id)
-    await trigger_repo.clear_all()
 
     # Clear agent roster
     roster_repo = AgentRosterRepository(session, user.id)

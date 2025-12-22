@@ -10,6 +10,7 @@ from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
+from ...services.execution import get_user_context
 
 
 @dataclass
@@ -33,8 +34,20 @@ class ExecutionAgentRuntime:
         self.agent = ExecutionAgent(agent_name)
         self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
-        self.tool_registry = get_tool_registry(agent_name=agent_name)
-        self.tool_schemas = get_tool_schemas()
+
+        # Get user context if available
+        user_context = get_user_context()
+        user_type = user_context.user_type if user_context else "adult"
+        finance_service = user_context.finance_service if user_context else None
+        achievements_service = user_context.achievements_service if user_context else None
+
+        self.tool_registry = get_tool_registry(
+            agent_name=agent_name,
+            user_type=user_type,
+            finance_service=finance_service,
+            achievements_service=achievements_service,
+        )
+        self.tool_schemas = get_tool_schemas(user_type=user_type)
 
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")

@@ -9,8 +9,11 @@ import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ErrorBanner } from '@/components/chat/ErrorBanner';
 import { useAutoScroll } from '@/components/chat/useAutoScroll';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAccessToken } from '@/lib/api';
+import { getAccessToken, api } from '@/lib/api';
 import type { ChatBubble } from '@/components/chat/types';
+
+// Wally Junior components
+import { WallyChatMessages, WallyChatHeader, WallyChatInput } from '@/components/wally';
 
 const formatEscapeCharacters = (text: string): string => {
   return text
@@ -39,17 +42,21 @@ const toBubbles = (payload: any): ChatBubble[] => {
 
 export default function Page() {
   const { settings, setSettings } = useSettings();
-  const { isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [balance, setBalance] = useState<number | undefined>(undefined);
   const { scrollContainerRef, handleScroll } = useAutoScroll({
     items: messages,
     isWaiting: isWaitingForResponse,
   });
+
+  // Check if this is a child user
+  const isChild = user?.user_type === 'child';
 
   const openSettings = useCallback(() => setOpen(true), []);
   const closeSettings = useCallback(() => setOpen(false), []);
@@ -191,8 +198,20 @@ export default function Page() {
 
   const handleLogout = useCallback(async () => {
     await logout();
-    router.push('/login');
-  }, [logout, router]);
+    router.push(isChild ? '/login/child' : '/login');
+  }, [logout, router, isChild]);
+
+  // Load balance for child users
+  const loadBalance = useCallback(async () => {
+    if (!isChild) return;
+    try {
+      const data = await api.getBalance();
+      setBalance(data?.current_balance || 0);
+    } catch (err) {
+      console.error('Failed to load balance', err);
+      setBalance(0);
+    }
+  }, [isChild]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = input.trim();
@@ -225,6 +244,13 @@ export default function Page() {
       void loadHistory();
     }
   }, [loadHistory, isAuthenticated]);
+
+  // Load balance for child users
+  useEffect(() => {
+    if (isAuthenticated && isChild) {
+      void loadBalance();
+    }
+  }, [loadBalance, isAuthenticated, isChild]);
 
   // Poll for new messages (e.g., from scheduled triggers/reminders)
   // Only polls when tab is visible, at a reasonable interval
@@ -296,8 +322,47 @@ export default function Page() {
   }
 
   const canSubmit = input.trim().length > 0;
-  const inputPlaceholder = 'Type a message…';
+  const inputPlaceholder = isChild ? 'Ask Wally something...' : 'Type a message…';
+  const childName = user?.display_name || 'friend';
 
+  // Child UI (Wally Junior)
+  if (isChild) {
+    return (
+      <main className="wally-bg min-h-screen p-4 sm:p-6">
+        <div className="chat-wrap flex flex-col">
+          <WallyChatHeader
+            childName={childName}
+            balance={balance}
+            onLogout={handleLogout}
+          />
+
+          <div className="card-wally flex-1 overflow-hidden">
+            <WallyChatMessages
+              messages={messages}
+              isWaitingForResponse={isWaitingForResponse}
+              scrollContainerRef={scrollContainerRef}
+              onScroll={handleScroll}
+              childName={childName}
+            />
+
+            <div className="border-t-2 border-teal-100 p-4">
+              {error && <ErrorBanner message={error} onDismiss={clearError} />}
+
+              <WallyChatInput
+                value={input}
+                canSubmit={canSubmit}
+                placeholder={inputPlaceholder}
+                onChange={handleInputChange}
+                onSubmit={handleSubmit}
+              />
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Adult UI (OpenPoke)
   return (
     <main className="chat-bg min-h-screen p-4 sm:p-6">
       <div className="chat-wrap flex flex-col">

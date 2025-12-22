@@ -186,23 +186,34 @@ class ExecutionBatchManager:
         from ...repositories.conversations import ConversationRepository
         from ...repositories.working_memory import WorkingMemoryRepository
         from ...services.v2 import ConversationService
+        from ...services.execution import get_user_context
+
+        # Capture user context from the current thread
+        user_context = get_user_context()
 
         async def _run_agent_message():
             async with async_session_factory() as session:
-                # Get the first user from database (assumes single-user or uses most recent)
-                from sqlalchemy import select
-                from ...database.models import User
-                result = await session.execute(select(User).limit(1))
-                user = result.scalar_one_or_none()
-                if not user:
-                    logger.error("No user found in database for agent message dispatch")
-                    return
+                # Use user context if available, otherwise fall back to first user
+                if user_context:
+                    user_id = user_context.user_id
+                    user_type = user_context.user_type
+                else:
+                    # Fall back to first user (legacy behavior)
+                    from sqlalchemy import select
+                    from ...database.models import User
+                    result = await session.execute(select(User).limit(1))
+                    user = result.scalar_one_or_none()
+                    if not user:
+                        logger.error("No user found in database for agent message dispatch")
+                        return
+                    user_id = user.id
+                    user_type = user.user_type
 
-                conv_repo = ConversationRepository(session, user.id)
-                wm_repo = WorkingMemoryRepository(session, user.id)
+                conv_repo = ConversationRepository(session, user_id)
+                wm_repo = WorkingMemoryRepository(session, user_id)
                 conv_service = ConversationService(conv_repo, wm_repo, auto_commit=True)
 
-                runtime = InteractionAgentRuntime(conv_service)
+                runtime = InteractionAgentRuntime(conv_service, user_type=user_type)
                 await runtime.handle_agent_message(payload)
 
         try:

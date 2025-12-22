@@ -6,9 +6,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ from server.auth.session import (
 )
 from server.config import get_settings
 from server.database import User
+from server.database.models import InviteCode, FamilyRelationship
 from server.database.session import get_async_session
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,8 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str]
     timezone: str
     created_at: datetime
+    user_type: str = "adult"
+    initial_balance: int = 0
 
     class Config:
         from_attributes = True
@@ -332,6 +336,8 @@ async def get_current_user_info(
         avatar_url=user.avatar_url,
         timezone=user.timezone,
         created_at=user.created_at,
+        user_type=user.user_type,
+        initial_balance=user.initial_balance,
     )
 
 
@@ -356,5 +362,219 @@ async def get_auth_status(
             avatar_url=user.avatar_url,
             timezone=user.timezone,
             created_at=user.created_at,
+            user_type=user.user_type,
+            initial_balance=user.initial_balance,
         ),
     )
+
+
+# =============================================================================
+# Child Authentication (Wally Junior)
+# =============================================================================
+
+
+class ChildSignupRequest(BaseModel):
+    """Request to create a child account using an invite code."""
+    invite_code: str = Field(..., min_length=4, max_length=20, description="Invite code from parent")
+    password: str = Field(..., min_length=4, max_length=100, description="Password (min 4 characters)")
+
+    @field_validator("invite_code")
+    @classmethod
+    def normalize_invite_code(cls, v: str) -> str:
+        return v.strip().upper()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v.strip()) < 4:
+            raise ValueError("Password must be at least 4 characters")
+        return v
+
+
+class ChildLoginRequest(BaseModel):
+    """Request to login as a child."""
+    email: str = Field(..., min_length=1, max_length=255, description="Child email")
+    password: str = Field(..., min_length=1, max_length=100, description="Password")
+
+
+class ChildUserResponse(BaseModel):
+    """Child user information response."""
+    id: str
+    email: str
+    display_name: Optional[str]
+    avatar_url: Optional[str]
+    user_type: str
+    initial_balance: int
+
+
+@router.post("/child/signup", response_model=TokenResponse)
+async def child_signup(
+    request: ChildSignupRequest,
+    http_request: Request,
+    session: AsyncSession = Depends(get_async_session),
+) -> TokenResponse:
+    """Create a child account using a parent-provided invite code.
+
+    The invite code contains the child's name and initial balance.
+    """
+    # Find the invite code (no user_id filter - anyone with code can use it)
+    result = await session.execute(
+        select(InviteCode).where(
+            InviteCode.code == request.invite_code.upper(),
+            InviteCode.used == False,
+            InviteCode.expires_at > datetime.now(timezone.utc),
+        )
+    )
+    invite = result.scalar_one_or_none()
+
+    if invite is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired invite code",
+        )
+
+    # Create a unique email for the child (based on parent + child name)
+    child_email = f"{invite.child_name.lower().replace(' ', '_')}_{invite.id}@wally.junior"
+
+    # Hash the password using bcrypt (secure password hashing)
+    password_hash = bcrypt.hashpw(request.password.encode(), bcrypt.gensalt()).decode()
+
+    # Create the child user
+    child = User(
+        email=child_email,
+        display_name=invite.child_name,
+        user_type="child",
+        password_hash=password_hash,
+        initial_balance=invite.initial_balance,
+    )
+    session.add(child)
+    await session.flush()
+
+    # Mark invite as used
+    invite.used = True
+    invite.used_by = child.id
+
+    # Create family relationship
+    relationship = FamilyRelationship(
+        parent_id=invite.parent_id,
+        child_id=child.id,
+        relationship_type="parent",
+    )
+    session.add(relationship)
+
+    await session.commit()
+
+    logger.info(f"Created child account: {child_email}")
+
+    # Create token pair
+    token_pair, token_id, expires_at = create_token_pair(child.id)
+
+    # Store session
+    user_agent = http_request.headers.get("user-agent")
+    client_ip = http_request.client.host if http_request.client else None
+
+    await create_session(
+        user_id=child.id,
+        refresh_token=token_pair.refresh_token,
+        expires_at=expires_at,
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    return TokenResponse(
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in,
+    )
+
+
+@router.post("/child/login", response_model=TokenResponse)
+async def child_login(
+    request: ChildLoginRequest,
+    http_request: Request,
+    session: AsyncSession = Depends(get_async_session),
+) -> TokenResponse:
+    """Login as a child using email and password."""
+    # Find the user
+    result = await session.execute(
+        select(User).where(
+            User.email == request.email,
+            User.user_type == "child",
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    # Verify password using bcrypt
+    if not user.password_hash or not bcrypt.checkpw(request.password.encode(), user.password_hash.encode()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is disabled",
+        )
+
+    # Update last login
+    user.last_login_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    logger.info(f"Child logged in: {user.email}")
+
+    # Create token pair
+    token_pair, token_id, expires_at = create_token_pair(user.id)
+
+    # Store session
+    user_agent = http_request.headers.get("user-agent")
+    client_ip = http_request.client.host if http_request.client else None
+
+    await create_session(
+        user_id=user.id,
+        refresh_token=token_pair.refresh_token,
+        expires_at=expires_at,
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    return TokenResponse(
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in,
+    )
+
+
+@router.get("/child/verify-code")
+async def verify_invite_code(
+    code: str,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """Verify if an invite code is valid and get child name."""
+
+    result = await session.execute(
+        select(InviteCode).where(
+            InviteCode.code == code.upper(),
+            InviteCode.used == False,
+            InviteCode.expires_at > datetime.now(timezone.utc),
+        )
+    )
+    invite = result.scalar_one_or_none()
+
+    if invite is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid or expired invite code",
+        )
+
+    return {
+        "valid": True,
+        "child_name": invite.child_name,
+        "initial_balance": invite.initial_balance,
+    }

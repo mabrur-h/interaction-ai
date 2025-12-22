@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 interface ChatHeaderProps {
   onOpenSettings: () => void;
   onClearHistory: () => void;
@@ -11,6 +13,12 @@ export function ChatHeader({ onOpenSettings, onClearHistory, onLogout }: ChatHea
         <h1 className="text-lg font-semibold">OpenPoke 🌴</h1>
       </div>
       <div className="flex items-center gap-2">
+        <Link
+          href="/parent/dashboard"
+          className="rounded-md border border-violet-200 px-3 py-2 text-sm text-violet-600 hover:bg-violet-50"
+        >
+          🦉 Family
+        </Link>
         <button
           className="rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
           onClick={onOpenSettings}

@@ -179,8 +179,8 @@ class ConversationService:
         chat_messages: List[ChatMessage] = []
 
         for msg in messages:
-            # Skip wait/system markers
-            if msg.role == "system":
+            # Skip wait/system markers and internal agent messages
+            if msg.role == "system" or msg.role == "agent":
                 continue
 
             timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S") if msg.created_at else None
@@ -190,11 +190,6 @@ class ConversationService:
                     ChatMessage(role="user", content=msg.content, timestamp=timestamp)
                 )
             elif msg.role == "assistant":
-                chat_messages.append(
-                    ChatMessage(role="assistant", content=msg.content, timestamp=timestamp)
-                )
-            elif msg.role == "agent":
-                # Agent messages can be shown as assistant messages with agent context
                 chat_messages.append(
                     ChatMessage(role="assistant", content=msg.content, timestamp=timestamp)
                 )

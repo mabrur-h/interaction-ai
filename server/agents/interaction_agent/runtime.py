@@ -49,12 +49,17 @@ class InteractionAgentRuntime:
     MAX_TOOL_ITERATIONS = 8
 
     # Initialize interaction agent runtime with settings and service dependencies
-    def __init__(self, conversation_service: "ConversationService") -> None:
+    def __init__(
+        self,
+        conversation_service: "ConversationService",
+        user_type: str = "adult",
+    ) -> None:
         settings = get_settings()
         self.api_key = settings.openrouter_api_key
         self.model = settings.interaction_agent_model
         self.settings = settings
         self.conversation_service = conversation_service
+        self.user_type = user_type
         self.tool_schemas = get_tool_schemas()
 
         if not self.api_key:
@@ -70,7 +75,7 @@ class InteractionAgentRuntime:
             transcript_before = await self._load_conversation_transcript()
             await self.conversation_service.record_user_message(user_message)
 
-            system_prompt = build_system_prompt()
+            system_prompt = build_system_prompt(self.user_type)
             messages = prepare_message_with_history(
                 user_message, transcript_before, message_type="user"
             )
@@ -108,7 +113,7 @@ class InteractionAgentRuntime:
             transcript_before = await self._load_conversation_transcript()
             await self.conversation_service.record_agent_message(agent_message)
 
-            system_prompt = build_system_prompt()
+            system_prompt = build_system_prompt(self.user_type)
             messages = prepare_message_with_history(
                 agent_message, transcript_before, message_type="agent"
             )

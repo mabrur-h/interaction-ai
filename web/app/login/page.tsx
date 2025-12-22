@@ -105,17 +105,29 @@ export default function LoginPage() {
         {/* Features */}
         <div className="mt-8 grid grid-cols-3 gap-4 text-center">
           <div className="p-3">
-            <div className="text-2xl mb-1">📧</div>
-            <div className="text-xs text-gray-600">Email Integration</div>
+            <div className="text-2xl mb-1">🦉</div>
+            <div className="text-xs text-gray-600">Wally Junior</div>
           </div>
           <div className="p-3">
-            <div className="text-2xl mb-1">📅</div>
-            <div className="text-xs text-gray-600">Calendar Sync</div>
+            <div className="text-2xl mb-1">💰</div>
+            <div className="text-xs text-gray-600">Finance Tracking</div>
           </div>
           <div className="p-3">
             <div className="text-2xl mb-1">🤖</div>
             <div className="text-xs text-gray-600">AI Assistant</div>
           </div>
+        </div>
+
+        {/* Wally Junior Link */}
+        <div className="mt-8 text-center">
+          <p className="text-gray-500 text-sm mb-2">Looking for Wally Junior?</p>
+          <a
+            href="/login/child"
+            className="inline-flex items-center gap-2 text-violet-600 hover:text-violet-700 font-medium"
+          >
+            <span className="text-xl">🦉</span>
+            <span>Kid Login</span>
+          </a>
         </div>
       </div>
     </div>

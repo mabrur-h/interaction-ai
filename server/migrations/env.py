@@ -2,8 +2,14 @@
 
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
 from pathlib import Path
+
+# Add project root to Python path so 'server' package is importable
+_project_root = Path(__file__).parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 from alembic import context
 from sqlalchemy import pool

@@ -10,7 +10,14 @@ from ...logging_config import logger
 from ...models import ChatMessage, ChatRequest
 from ...repositories.conversations import ConversationRepository
 from ...repositories.working_memory import WorkingMemoryRepository
+from ...repositories.users import UserRepository
+from ...repositories.expenses import ExpenseRepository
+from ...repositories.savings_goals import SavingsGoalRepository
+from ...repositories.achievements import AchievementRepository
 from ...services.v2 import ConversationService
+from ...services.v2.finance_service import FinanceService
+from ...services.v2.achievements_service import AchievementsService
+from ...services.execution import UserContext, set_user_context, clear_user_context
 from ...utils import error_response
 
 
@@ -51,8 +58,42 @@ async def handle_chat_request(
         # Create a new session for the background task
         async with async_session_factory() as session:
             try:
+                # Get user to determine user_type (adult vs child)
+                user_repo = UserRepository(session)
+                user = await user_repo.get_by_id(user_id)
+                user_type = user.user_type if user else "adult"
+
+                # Create services for child users
+                finance_service = None
+                achievements_service = None
+                if user_type == "child" and user:
+                    expense_repo = ExpenseRepository(session, user_id)
+                    savings_repo = SavingsGoalRepository(session, user_id)
+                    achievement_repo = AchievementRepository(session, user_id)
+
+                    finance_service = FinanceService(
+                        expense_repo=expense_repo,
+                        savings_repo=savings_repo,
+                        user=user,
+                        auto_commit=True,
+                    )
+                    achievements_service = AchievementsService(
+                        achievement_repo=achievement_repo,
+                        auto_commit=True,
+                    )
+
+                # Set user context for execution agents
+                set_user_context(UserContext(
+                    user_id=user_id,
+                    user_type=user_type,
+                    finance_service=finance_service,
+                    achievements_service=achievements_service,
+                ))
+
                 # Sync OAuth connections from DB to V1 singletons for execution agents
-                await sync_oauth_connections_for_user(session, user_id)
+                # Only for adult users (kids don't have Gmail/Calendar)
+                if user_type == "adult":
+                    await sync_oauth_connections_for_user(session, user_id)
 
                 # Create user-scoped conversation service with the new session
                 # auto_commit=True ensures messages are visible to polling immediately
@@ -60,13 +101,16 @@ async def handle_chat_request(
                 wm_repo = WorkingMemoryRepository(session, user_id)
                 conv_service = ConversationService(conv_repo, wm_repo, auto_commit=True)
 
-                runtime = InteractionAgentRuntime(conv_service)
+                runtime = InteractionAgentRuntime(conv_service, user_type=user_type)
                 await runtime.execute(user_message=user_content)
             except ValueError as ve:
                 # Missing API key error
                 logger.error("configuration error", extra={"error": str(ve)})
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("chat task failed", extra={"error": str(exc)}, exc_info=True)
+            finally:
+                # Clean up user context
+                clear_user_context()
 
     asyncio.create_task(_run_interaction())
 

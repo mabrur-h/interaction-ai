@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse
 from .config import get_settings
 from .logging_config import configure_logging, logger
 from .routes import api_router, api_router_v2
-from .services import get_important_email_watcher, get_trigger_scheduler
 
 
 # Register global exception handlers for consistent error responses across the API
@@ -51,26 +50,13 @@ _settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle - startup and shutdown."""
-    # Startup: Initialize background services
-    logger.info("Starting OpenPoke server", extra={"version": _settings.app_version})
-
-    scheduler = get_trigger_scheduler()
-    await scheduler.start()
-
-    watcher = get_important_email_watcher()
-    await watcher.start()
-
-    logger.info("Background services started")
+    # Startup
+    logger.info("Starting Wally Junior server", extra={"version": _settings.app_version})
 
     yield  # Application is running
 
-    # Shutdown: Gracefully stop services
-    logger.info("Shutting down OpenPoke server")
-
-    await scheduler.stop()
-    await watcher.stop()
-
-    logger.info("Background services stopped")
+    # Shutdown
+    logger.info("Shutting down Wally Junior server")
 
 
 app = FastAPI(

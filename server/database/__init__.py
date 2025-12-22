@@ -6,13 +6,23 @@ from server.database.models import (
     User,
     Session,
     OAuthConnection,
-    Trigger,
     Conversation,
     Message,
-    GmailSeenMessage,
     ExecutionLog,
     AgentRoster,
     WorkingMemory,
+    # Wally Junior models
+    FamilyRelationship,
+    Expense,
+    SavingsGoal,
+    InviteCode,
+    Achievement,
+    # Adult Finance models (Poke)
+    Transaction,
+    Budget,
+    Debt,
+    RecurringTransaction,
+    ExchangeRate,
 )
 
 __all__ = [
@@ -24,11 +34,21 @@ __all__ = [
     "User",
     "Session",
     "OAuthConnection",
-    "Trigger",
     "Conversation",
     "Message",
-    "GmailSeenMessage",
     "ExecutionLog",
     "AgentRoster",
     "WorkingMemory",
+    # Wally Junior
+    "FamilyRelationship",
+    "Expense",
+    "SavingsGoal",
+    "InviteCode",
+    "Achievement",
+    # Adult Finance (Poke)
+    "Transaction",
+    "Budget",
+    "Debt",
+    "RecurringTransaction",
+    "ExchangeRate",
 ]

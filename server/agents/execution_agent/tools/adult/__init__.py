@@ -1,5 +1,5 @@
-"""Adult-specific tools for OpenPoke - productivity and integrations."""
+"""Adult-specific tools for OpenPoke - finance tracking."""
 
-from . import productivity
+from . import finance
 
-__all__ = ["productivity"]
+__all__ = ["finance"]

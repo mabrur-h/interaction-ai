@@ -8,6 +8,7 @@ from server.services.v2.achievements_service import AchievementsService
 # Adult Finance (Poke)
 from server.services.v2.currency_service import CurrencyService
 from server.services.v2.adult_finance_service import AdultFinanceService
+from server.services.v2.insights_service import InsightsService
 
 __all__ = [
     "ConversationService",
@@ -17,4 +18,5 @@ __all__ = [
     # Adult Finance (Poke)
     "CurrencyService",
     "AdultFinanceService",
+    "InsightsService",
 ]

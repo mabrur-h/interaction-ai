@@ -14,9 +14,16 @@ from ...repositories.users import UserRepository
 from ...repositories.expenses import ExpenseRepository
 from ...repositories.savings_goals import SavingsGoalRepository
 from ...repositories.achievements import AchievementRepository
+from ...repositories.transactions import TransactionRepository
+from ...repositories.budgets import BudgetRepository
+from ...repositories.debts import DebtRepository
+from ...repositories.recurring_transactions import RecurringTransactionRepository
+from ...repositories.exchange_rates import ExchangeRateRepository
 from ...services.v2 import ConversationService
 from ...services.v2.finance_service import FinanceService
 from ...services.v2.achievements_service import AchievementsService
+from ...services.v2.adult_finance_service import AdultFinanceService
+from ...services.v2.currency_service import CurrencyService
 from ...services.execution import UserContext, set_user_context, clear_user_context
 from ...utils import error_response
 
@@ -63,10 +70,13 @@ async def handle_chat_request(
                 user = await user_repo.get_by_id(user_id)
                 user_type = user.user_type if user else "adult"
 
-                # Create services for child users
+                # Create services based on user type
                 finance_service = None
                 achievements_service = None
+                adult_finance_service = None
+
                 if user_type == "child" and user:
+                    # Child users get Wally finance tools
                     expense_repo = ExpenseRepository(session, user_id)
                     savings_repo = SavingsGoalRepository(session, user_id)
                     achievement_repo = AchievementRepository(session, user_id)
@@ -82,12 +92,32 @@ async def handle_chat_request(
                         auto_commit=True,
                     )
 
+                elif user_type == "adult" and user:
+                    # Adult users get Poke finance tools
+                    transaction_repo = TransactionRepository(session, user_id)
+                    budget_repo = BudgetRepository(session, user_id)
+                    debt_repo = DebtRepository(session, user_id)
+                    recurring_repo = RecurringTransactionRepository(session, user_id)
+                    exchange_rate_repo = ExchangeRateRepository(session)
+
+                    currency_service = CurrencyService(exchange_rate_repo)
+                    adult_finance_service = AdultFinanceService(
+                        transaction_repo=transaction_repo,
+                        budget_repo=budget_repo,
+                        debt_repo=debt_repo,
+                        recurring_repo=recurring_repo,
+                        currency_service=currency_service,
+                        user=user,
+                        auto_commit=True,
+                    )
+
                 # Set user context for execution agents
                 set_user_context(UserContext(
                     user_id=user_id,
                     user_type=user_type,
                     finance_service=finance_service,
                     achievements_service=achievements_service,
+                    adult_finance_service=adult_finance_service,
                 ))
 
                 # Sync OAuth connections from DB to V1 singletons for execution agents

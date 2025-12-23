@@ -2,7 +2,7 @@
 
 This module routes tools based on user_type:
 - 'child': Kids get finance + achievements tools (Wally Junior)
-- 'adult': Adults get productivity tools (OpenPoke)
+- 'adult': Adults get finance tools (Poke/OpenPoke)
 
 Both user types get shared utility tools.
 """
@@ -27,14 +27,14 @@ def get_tool_schemas(user_type: str = "adult") -> List[Dict[str, Any]]:
     schemas = [*utils.get_schemas()]
 
     if user_type == "child":
-        # Kids get finance and achievements tools
+        # Kids get Wally finance and achievements tools
         from .kids import finance, achievements
         schemas.extend(finance.get_schemas())
         schemas.extend(achievements.get_schemas())
     else:
-        # Adults get productivity tools (placeholder for now)
-        from .adult import productivity
-        schemas.extend(productivity.get_schemas())
+        # Adults get Poke finance tools
+        from .adult import finance
+        schemas.extend(finance.get_schemas())
 
     return schemas
 
@@ -44,6 +44,8 @@ def get_tool_registry(
     user_type: str = "adult",
     finance_service: Optional[Any] = None,
     achievements_service: Optional[Any] = None,
+    adult_finance_service: Optional[Any] = None,
+    insights_service: Optional[Any] = None,
 ) -> Dict[str, Callable[..., Any]]:
     """Return Python callables for executing tools by name.
 
@@ -52,6 +54,8 @@ def get_tool_registry(
         user_type: 'adult' or 'child'
         finance_service: FinanceService instance (required for child finance tools)
         achievements_service: AchievementsService instance (required for child achievements)
+        adult_finance_service: AdultFinanceService instance (required for adult finance tools)
+        insights_service: InsightsService instance (optional, for adult insights)
 
     Returns:
         Dictionary mapping tool names to callables
@@ -62,7 +66,7 @@ def get_tool_registry(
     registry.update(utils.build_registry(agent_name))
 
     if user_type == "child":
-        # Kids get finance and achievements tools
+        # Kids get Wally finance and achievements tools
         from .kids import finance, achievements
 
         if finance_service is not None:
@@ -71,9 +75,17 @@ def get_tool_registry(
         if achievements_service is not None:
             registry.update(achievements.build_registry(agent_name, achievements_service))
     else:
-        # Adults get productivity tools
-        from .adult import productivity
-        registry.update(productivity.build_registry(agent_name))
+        # Adults get Poke finance tools (with optional insights)
+        from .adult import finance
+
+        if adult_finance_service is not None:
+            registry.update(
+                finance.build_registry(
+                    agent_name,
+                    adult_finance_service,
+                    insights_service=insights_service,
+                )
+            )
 
     return registry
 

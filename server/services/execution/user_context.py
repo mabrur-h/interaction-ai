@@ -17,6 +17,7 @@ class UserContext:
     user_type: str  # "adult" or "child"
     finance_service: Optional[Any] = None  # FinanceService for child users
     achievements_service: Optional[Any] = None  # AchievementsService for child users
+    adult_finance_service: Optional[Any] = None  # AdultFinanceService for adult users
 
 
 # Context variable to store user context

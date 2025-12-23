@@ -34,28 +34,39 @@ class ExecutionAgentRuntime:
         self.agent = ExecutionAgent(agent_name)
         self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
+        self.agent_name = agent_name
 
-        # Get user context if available
+        # Store user context info for deferred service creation
         user_context = get_user_context()
-        user_type = user_context.user_type if user_context else "adult"
-        finance_service = user_context.finance_service if user_context else None
-        achievements_service = user_context.achievements_service if user_context else None
+        self._user_id = user_context.user_id if user_context else None
+        self._user_type = user_context.user_type if user_context else "adult"
 
-        self.tool_registry = get_tool_registry(
-            agent_name=agent_name,
-            user_type=user_type,
-            finance_service=finance_service,
-            achievements_service=achievements_service,
-        )
-        self.tool_schemas = get_tool_schemas(user_type=user_type)
+        # Defer tool registry creation until execute() when we have our own session
+        self.tool_registry = None
+        self.tool_schemas = get_tool_schemas(user_type=self._user_type)
 
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
     # Main execution loop for running agent with LLM calls and tool execution
     async def execute(self, instructions: str) -> ExecutionResult:
-        """Execute the agent with given instructions."""
+        """Execute the agent with given instructions.
+
+        Creates its own database session to avoid concurrency issues with
+        the interaction agent's session.
+        """
+        # Create our own session to avoid sharing with interaction agent
+        from ...database.session import async_session_factory
+
+        async with async_session_factory() as session:
+            return await self._execute_with_session(session, instructions)
+
+    async def _execute_with_session(self, session, instructions: str) -> ExecutionResult:
+        """Execute the agent with a dedicated database session."""
         try:
+            # Create services with our own session
+            await self._create_services(session)
+
             # Build system prompt with history
             system_prompt = self.agent.build_system_prompt_with_history()
 
@@ -160,6 +171,101 @@ class ExecutionAgentRuntime:
                 response=failure_text,
                 error=error_msg
             )
+
+    async def _create_services(self, session) -> None:
+        """Create services with the provided session.
+
+        This ensures the execution agent uses its own database session,
+        preventing concurrent operation errors with the interaction agent.
+        """
+        if not self._user_id:
+            # No user context - create minimal tool registry
+            self.tool_registry = get_tool_registry(
+                agent_name=self.agent_name,
+                user_type=self._user_type,
+            )
+            return
+
+        finance_service = None
+        achievements_service = None
+        adult_finance_service = None
+        insights_service = None
+
+        if self._user_type == "child":
+            from ...repositories.expenses import ExpenseRepository
+            from ...repositories.savings_goals import SavingsGoalRepository
+            from ...repositories.achievements import AchievementRepository
+            from ...repositories.users import UserRepository
+            from ...services.v2.finance_service import FinanceService
+            from ...services.v2.achievements_service import AchievementsService
+
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_id(self._user_id)
+
+            if user:
+                expense_repo = ExpenseRepository(session, self._user_id)
+                savings_repo = SavingsGoalRepository(session, self._user_id)
+                achievement_repo = AchievementRepository(session, self._user_id)
+
+                finance_service = FinanceService(
+                    expense_repo=expense_repo,
+                    savings_repo=savings_repo,
+                    user=user,
+                    auto_commit=True,
+                )
+                achievements_service = AchievementsService(
+                    achievement_repo=achievement_repo,
+                    auto_commit=True,
+                )
+
+        elif self._user_type == "adult":
+            from ...repositories.transactions import TransactionRepository
+            from ...repositories.budgets import BudgetRepository
+            from ...repositories.debts import DebtRepository
+            from ...repositories.recurring_transactions import RecurringTransactionRepository
+            from ...repositories.exchange_rates import ExchangeRateRepository
+            from ...repositories.users import UserRepository
+            from ...services.v2.adult_finance_service import AdultFinanceService
+            from ...services.v2.currency_service import CurrencyService
+            from ...services.v2.insights_service import InsightsService
+
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_id(self._user_id)
+
+            if user:
+                transaction_repo = TransactionRepository(session, self._user_id)
+                budget_repo = BudgetRepository(session, self._user_id)
+                debt_repo = DebtRepository(session, self._user_id)
+                recurring_repo = RecurringTransactionRepository(session, self._user_id)
+                exchange_rate_repo = ExchangeRateRepository(session)
+
+                currency_service = CurrencyService(exchange_rate_repo)
+                adult_finance_service = AdultFinanceService(
+                    transaction_repo=transaction_repo,
+                    budget_repo=budget_repo,
+                    debt_repo=debt_repo,
+                    recurring_repo=recurring_repo,
+                    currency_service=currency_service,
+                    user=user,
+                    auto_commit=True,
+                )
+
+                # Create insights service for adult users
+                insights_service = InsightsService(
+                    transaction_repo=transaction_repo,
+                    budget_repo=budget_repo,
+                    currency_service=currency_service,
+                    user=user,
+                )
+
+        self.tool_registry = get_tool_registry(
+            agent_name=self.agent_name,
+            user_type=self._user_type,
+            finance_service=finance_service,
+            achievements_service=achievements_service,
+            adult_finance_service=adult_finance_service,
+            insights_service=insights_service,
+        )
 
     # Execute OpenRouter API call with system prompt, messages, and optional tool schemas
     async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:

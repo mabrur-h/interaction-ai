@@ -8,23 +8,25 @@ from ...services.execution import get_agent_roster
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 _wally_prompt_path = Path(__file__).parent / "wally_system_prompt.md"
+_poke_prompt_path = Path(__file__).parent / "poke_system_prompt.md"
 
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
 WALLY_SYSTEM_PROMPT = _wally_prompt_path.read_text(encoding="utf-8").strip() if _wally_prompt_path.exists() else SYSTEM_PROMPT
+POKE_SYSTEM_PROMPT = _poke_prompt_path.read_text(encoding="utf-8").strip() if _poke_prompt_path.exists() else SYSTEM_PROMPT
 
 
 def build_system_prompt(user_type: str = "adult") -> str:
     """Return the appropriate system prompt based on user type.
 
     Args:
-        user_type: 'adult' for Poke (productivity), 'child' for Wally (finance)
+        user_type: 'adult' for Poke (finance), 'child' for Wally (finance)
 
     Returns:
         The system prompt string
     """
     if user_type == "child":
         return WALLY_SYSTEM_PROMPT
-    return SYSTEM_PROMPT
+    return POKE_SYSTEM_PROMPT
 
 
 # Build structured message with conversation history, active agents, and current turn

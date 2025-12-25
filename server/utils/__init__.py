@@ -1,3 +1,9 @@
+from .frequency import (
+    VALID_FREQUENCIES,
+    calculate_next_due_date,
+    get_frequency_multiplier_monthly,
+    is_valid_frequency,
+)
 from .responses import error_response
 from .timezones import (
     UTC,
@@ -14,4 +20,8 @@ __all__ = [
     "get_user_timezone_name",
     "now_in_user_timezone",
     "resolve_user_timezone",
+    "calculate_next_due_date",
+    "get_frequency_multiplier_monthly",
+    "is_valid_frequency",
+    "VALID_FREQUENCIES",
 ]

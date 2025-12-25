@@ -196,7 +196,6 @@ class ExecutionBatchManager:
                 # Use user context if available, otherwise fall back to first user
                 if user_context:
                     user_id = user_context.user_id
-                    user_type = user_context.user_type
                 else:
                     # Fall back to first user (legacy behavior)
                     from sqlalchemy import select
@@ -207,13 +206,12 @@ class ExecutionBatchManager:
                         logger.error("No user found in database for agent message dispatch")
                         return
                     user_id = user.id
-                    user_type = user.user_type
 
                 conv_repo = ConversationRepository(session, user_id)
                 wm_repo = WorkingMemoryRepository(session, user_id)
                 conv_service = ConversationService(conv_repo, wm_repo, auto_commit=True)
 
-                runtime = InteractionAgentRuntime(conv_service, user_type=user_type)
+                runtime = InteractionAgentRuntime(conv_service)
                 await runtime.handle_agent_message(payload)
 
         try:

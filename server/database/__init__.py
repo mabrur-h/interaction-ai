@@ -11,18 +11,14 @@ from server.database.models import (
     ExecutionLog,
     AgentRoster,
     WorkingMemory,
-    # Wally Junior models
-    FamilyRelationship,
-    Expense,
-    SavingsGoal,
-    InviteCode,
-    Achievement,
     # Adult Finance models (Poke)
     Transaction,
     Budget,
     Debt,
     RecurringTransaction,
     ExchangeRate,
+    ReminderLog,
+    QuickReminder,
 )
 
 __all__ = [
@@ -39,16 +35,12 @@ __all__ = [
     "ExecutionLog",
     "AgentRoster",
     "WorkingMemory",
-    # Wally Junior
-    "FamilyRelationship",
-    "Expense",
-    "SavingsGoal",
-    "InviteCode",
-    "Achievement",
     # Adult Finance (Poke)
     "Transaction",
     "Budget",
     "Debt",
     "RecurringTransaction",
     "ExchangeRate",
+    "ReminderLog",
+    "QuickReminder",
 ]

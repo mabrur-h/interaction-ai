@@ -1,213 +1,175 @@
-# Wally Junior Implementation Changelog
+# OpenPoke Implementation Changelog
 
-## Implementation Date: December 2024
+## December 2024
 
-### Phase 1: Database Schema
+### Wally Junior (Kids) Code Removal
 
-**Modified Files:**
-- `server/database/models.py` - Added User columns and 4 new tables
+**Decision**: Removed all Wally Junior (kids) code from the codebase. The kids app will be created as a separate backend application in the future.
 
-**New Models:**
-- `FamilyRelationship` - Parent-child relationships
-- `Expense` - Manual expense tracking
-- `SavingsGoal` - Piggy bank goals
-- `InviteCode` - Child account creation codes
+**Deleted Backend Files:**
+- `server/agents/execution_agent/tools/kids/` (entire folder - finance.py, achievements.py)
+- `server/agents/interaction_agent/wally_system_prompt.md`
+- `server/repositories/expenses.py`
+- `server/repositories/savings_goals.py`
+- `server/repositories/achievements.py`
+- `server/repositories/invite_codes.py`
+- `server/repositories/family.py`
+- `server/services/v2/finance_service.py` (kids finance)
+- `server/services/v2/achievements_service.py`
+- `server/routes/v2/family.py`
+- `server/routes/v2/finance.py` (kids finance)
+- `server/routes/v2/achievements.py`
 
-**Migration:**
-- `server/migrations/versions/20251220_000001_wally_junior_schema.py`
+**Deleted Frontend Files:**
+- `web/app/login/child/` - Child login page
+- `web/app/signup/` - Child signup
+- `web/app/achievements/` - Achievements page
+- `web/app/piggy-bank/` - Savings goals page
+- `web/app/tasks/` - Tasks page
+- `web/app/learn/` - Learning/lessons
+- `web/app/parent/` - Parent dashboard
+- `web/app/profile/` - Kids profile
+- `web/components/wally/` (entire folder - 10 components)
+- `web/components/achievements/`
+- `web/components/tasks/`
+- `web/components/learn/`
+- `web/components/shared/`
+- `web/lib/mockData.ts`
+- `web/types/game.ts`
 
----
+**Modified Backend Files:**
+- `server/agents/execution_agent/tools/registry.py` - Removed user_type routing, kids tools
+- `server/agents/execution_agent/runtime.py` - Removed child service branch
+- `server/agents/interaction_agent/agent.py` - Only loads Poke prompt
+- `server/agents/interaction_agent/runtime.py` - Removed user_type parameter
+- `server/services/conversation/chat_handler.py` - Removed kids service creation
+- `server/services/execution/user_context.py` - Removed kids fields
+- `server/database/models.py` - Removed 5 Wally models (FamilyRelationship, Expense, SavingsGoal, InviteCode, Achievement) and User kids fields
+- `server/database/__init__.py` - Removed kids model exports
+- `server/repositories/__init__.py` - Removed kids exports
+- `server/services/v2/__init__.py` - Removed kids exports
+- `server/routes/v2/__init__.py` - Removed kids routes
+- `server/routes/__init__.py` - Removed kids routes
+- `server/routes/auth.py` - Removed child signup/login endpoints
 
-### Phase 2: Backend Repositories
+**Modified Frontend Files:**
+- `web/app/page.tsx` - Removed all Wally UI code, adults-only
+- `web/app/globals.css` - Removed all `.wally-*`, `.neo-*`, kids styles
+- `web/lib/api.ts` - Removed all kids API methods
+- `web/contexts/AuthContext.tsx` - Removed kids user fields
+- `web/package.json` - Removed unused `@react-oauth/google`
 
-**New Files:**
-- `server/repositories/expenses.py` - Expense CRUD
-- `server/repositories/savings_goals.py` - Savings goal CRUD
-- `server/repositories/family.py` - Family relationship management
-- `server/repositories/invite_codes.py` - Invite code management
-
-**Modified:**
-- `server/repositories/__init__.py` - Export new repositories
-
----
-
-### Phase 3: Services
-
-**New Files:**
-- `server/services/v2/finance_service.py` - Finance business logic
-
-**Modified:**
-- `server/services/v2/__init__.py` - Export FinanceService
-
----
-
-### Phase 4: Agent System
-
-**New Files:**
-- `server/agents/interaction_agent/wally_system_prompt.md` - Wally personality
-- `server/agents/execution_agent/tools/finance.py` - 7 finance tools
-
-**Modified:**
-- `server/agents/interaction_agent/agent.py` - Prompt selection by user_type
-- `server/agents/interaction_agent/runtime.py` - Accept user_type parameter
-- `server/agents/execution_agent/tools/registry.py` - Conditional tool loading
-- `server/services/conversation/chat_handler.py` - User type detection
-
----
-
-### Phase 5: API Routes
-
-**New Files:**
-- `server/routes/v2/family.py` - Family management endpoints
-- `server/routes/v2/finance.py` - Finance endpoints
-
-**Modified:**
-- `server/routes/auth.py` - Added child auth endpoints
-- `server/routes/__init__.py` - Include new routers
-- `server/routes/v2/__init__.py` - Export new routers
+**New Migration:**
+- `server/migrations/versions/20251223_000002_remove_kids_tables.py` - Drops kids tables and user columns
 
 ---
 
-### Phase 6: Frontend
+### Adult Finance (Poke) Implementation
 
-**New Files:**
-- `web/app/login/child/page.tsx` - Child login page
-- `web/app/signup/child/page.tsx` - Child signup page
-- `web/app/piggy-bank/page.tsx` - Savings goals page
-- `web/app/parent/dashboard/page.tsx` - Parent dashboard
-- `web/app/parent/create-child/page.tsx` - Create invite code
-- `web/app/parent/child/[id]/page.tsx` - View child details
-- `web/components/wally/WallyOwl.tsx` - Owl mascot SVG
-- `web/components/wally/WallyChatMessages.tsx` - Kid-friendly chat
-- `web/components/wally/WallyChatHeader.tsx` - Chat header with balance
-- `web/components/wally/WallyChatInput.tsx` - Fun input component
-- `web/components/wally/index.ts` - Component exports
+**Phase 1: Foundation**
+- Added 5 new models: Transaction, Budget, Debt, RecurringTransaction, ExchangeRate
+- Extended User model: primary_currency, currency_settings
+- Created repositories for all new models
+- Created CurrencyService and AdultFinanceService
 
-**Modified:**
-- `web/app/page.tsx` - Conditional child/adult UI
-- `web/app/login/page.tsx` - Added child login link
-- `web/app/globals.css` - Added Wally Junior styles
-- `web/tailwind.config.ts` - Added Wally color palette
-- `web/lib/api.ts` - Added Wally Junior API methods
-- `web/contexts/AuthContext.tsx` - Extended User type
-- `web/components/chat/ChatHeader.tsx` - Added Family link
+**Phase 2: Agent Tools**
+- Created `server/agents/execution_agent/tools/adult/finance.py` with 10 tools:
+  - `record_transaction` - Add/edit/delete transactions
+  - `delete_transaction` - Remove transactions
+  - `query_finances` - Flexible financial queries
+  - `get_financial_summary` - Overview of finances
+  - `get_dashboard` - Quick stats view
+  - `manage_budget` - Set/view/delete budgets
+  - `manage_debt` - Track lent/borrowed money
+  - `manage_recurring` - Subscriptions and regular income
+  - `get_insights` - Request summaries and patterns
+- Created secure QueryBuilder for safe query construction
 
----
+**Phase 3: Integration**
+- Updated chat_handler.py to create adult finance services
+- Updated UserContext with adult_finance_service
+- Updated execution_agent runtime to pass services
 
-## Files Summary
+**Phase 4: Insights**
+- Created InsightsService with:
+  - Post-transaction insights
+  - Daily/weekly/monthly summaries
+  - Pattern detection (spending spikes, recurring patterns, etc.)
 
-### Backend (Python)
-| Type | Count |
-|------|-------|
-| New files | 8 |
-| Modified files | 10 |
-| Migration files | 1 |
-
-### Frontend (TypeScript/React)
-| Type | Count |
-|------|-------|
-| New pages | 6 |
-| New components | 5 |
-| Modified files | 6 |
+**Persona:**
+- Created `server/agents/interaction_agent/poke_system_prompt.md` - Poke personality
 
 ---
 
-## Testing Notes
-
-### Manual Testing Checklist
-
-**Child Flow:**
-1. [ ] Parent creates invite code
-2. [ ] Child uses invite code to sign up
-3. [ ] Child logs in successfully
-4. [ ] Child sees Wally UI (not Poke)
-5. [ ] Child can chat with Wally
-6. [ ] Child can create savings goal
-7. [ ] Child can add money to goal
-8. [ ] Child can view piggy bank page
-
-**Parent Flow:**
-1. [ ] Parent logs in with Google
-2. [ ] Parent accesses dashboard
-3. [ ] Parent creates child account
-4. [ ] Parent sees invite code
-5. [ ] Parent views child details
-
-**AI Agent:**
-1. [ ] Wally responds with kid-friendly language
-2. [ ] Finance tools work correctly
-3. [ ] Safety rules prevent inappropriate content
-4. [ ] Balance and spending tracked correctly
-
----
-
-## Bug Fixes
-
-### December 2024 - Null Check Fixes
-
-Fixed runtime errors caused by accessing undefined API response data:
-
-**Files Fixed:**
-- `web/app/parent/dashboard/page.tsx` - Added null checks for `children` and `invites` arrays
-- `web/app/piggy-bank/page.tsx` - Added null checks for `goals` array and `balance`
-- `web/app/page.tsx` - Added null check for balance in child view
-
-**Issue:** API responses could return undefined when user is not authenticated or API fails, causing "Cannot read properties of undefined" errors.
-
-**Solution:** Added optional chaining (`?.`) and fallback values (`|| []`, `|| 0`) to all API response handlers.
-
-### December 2024 - InviteCode Repository Fix
-
-Fixed "user_id is an invalid keyword argument for InviteCode" error.
-
-**File Fixed:**
-- `server/repositories/invite_codes.py` - Changed from `UserScopedRepository` to `BaseRepository` since `InviteCode` model uses `parent_id` instead of `user_id`
-
----
-
-## Code Cleanup
-
-### December 2024 - Gmail/Calendar/Triggers Removal
+### Gmail/Calendar/Triggers Removal (Earlier)
 
 Removed unused Gmail, Calendar, and Triggers integrations to simplify codebase.
 
-**Deleted Files (Backend):**
-- `server/agents/execution_agent/tools/gmail.py`
-- `server/agents/execution_agent/tools/calendar.py`
-- `server/agents/execution_agent/tools/triggers.py`
-- `server/agents/execution_agent/tasks/search_email/` (entire folder)
-- `server/services/gmail/` (entire folder)
-- `server/services/calendar/` (entire folder)
-- `server/services/triggers/` (entire folder)
-- `server/services/v2/gmail_service.py`
-- `server/services/v2/calendar_service.py`
-- `server/services/v2/trigger_service.py`
-- `server/services/trigger_scheduler.py`
-- `server/routes/v2/gmail.py`
-- `server/routes/v2/calendar.py`
-- `server/repositories/gmail_seen.py`
-- `server/repositories/triggers.py`
-- `server/models/gmail.py`
-- `server/models/calendar.py`
-- `server/tasks/email_watcher.py`
-- `server/tasks/triggers.py`
+**Deleted:**
+- Gmail service, routes, repositories, tools
+- Calendar service, routes, tools
+- Trigger service, scheduler, routes, repositories
+- Email watcher task
 
-**Deleted Files (Frontend):**
-- `web/app/api/gmail/` (entire folder)
-- `web/app/api/calendar/` (entire folder)
-- `web/components/ProtectedRoute.tsx`
+---
 
-**Modified Files:**
-- `server/app.py` - Removed scheduler/watcher startup
-- `server/database/models.py` - Removed `Trigger` and `GmailSeenMessage` tables
-- `server/agents/execution_agent/tools/registry.py` - Simplified tool loading
-- `server/services/__init__.py` - Cleaned up exports
-- `server/services/v2/__init__.py` - Cleaned up exports
-- `server/repositories/__init__.py` - Cleaned up exports
-- `server/routes/__init__.py` - Removed Gmail/Calendar routers
-- `server/routes/v2/__init__.py` - Removed Gmail/Calendar routers
-- `web/lib/api.ts` - Removed Gmail/Calendar API methods
-- `web/components/SettingsModal.tsx` - Simplified to timezone-only
-- `web/app/login/page.tsx` - Updated features section
+## File Structure (Current)
 
-See `docs/REFACTORING.md` for detailed cleanup documentation and future improvement recommendations.
+```
+server/
+├── agents/
+│   ├── interaction_agent/
+│   │   ├── agent.py                    # Loads Poke prompt only
+│   │   ├── runtime.py
+│   │   └── poke_system_prompt.md       # Poke persona
+│   └── execution_agent/
+│       ├── runtime.py
+│       └── tools/
+│           ├── registry.py             # Adults-only tools
+│           ├── utils.py
+│           └── adult/
+│               ├── __init__.py
+│               ├── finance.py          # 10 finance tools
+│               └── query_builder.py
+├── database/
+│   ├── models.py                       # User + adult finance models
+│   └── __init__.py
+├── repositories/
+│   ├── transactions.py
+│   ├── budgets.py
+│   ├── debts.py
+│   ├── recurring_transactions.py
+│   ├── exchange_rates.py
+│   └── ... (core repos)
+├── services/
+│   ├── v2/
+│   │   ├── adult_finance_service.py
+│   │   ├── currency_service.py
+│   │   ├── insights_service.py
+│   │   └── conversation_service.py
+│   ├── execution/
+│   │   └── user_context.py
+│   └── conversation/
+│       └── chat_handler.py
+├── routes/
+│   ├── auth.py                         # Google OAuth only
+│   └── v2/
+│       ├── chat.py
+│       └── meta.py
+└── migrations/versions/
+    ├── 20251223_000001_adult_finance.py
+    └── 20251223_000002_remove_kids_tables.py
+
+web/
+├── app/
+│   ├── page.tsx                        # Adult chat UI
+│   ├── login/page.tsx
+│   ├── auth/callback/page.tsx
+│   └── globals.css
+├── components/
+│   └── chat/                           # Adult chat components
+├── contexts/
+│   └── AuthContext.tsx
+└── lib/
+    └── api.ts                          # Adult API methods only
+```

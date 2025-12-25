@@ -26,8 +26,6 @@ export interface User {
   avatar_url: string | null;
   timezone: string;
   created_at: string;
-  user_type?: 'adult' | 'child';
-  initial_balance?: number;
 }
 
 /**

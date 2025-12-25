@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
@@ -245,7 +245,7 @@ _SCHEMAS: List[Dict[str, Any]] = [
                     },
                     "counterparty": {
                         "type": "string",
-                        "description": "Who owes/is owed money",
+                        "description": "Who owes/is owed money (use for add, or to find debt by name for payment/forgive)",
                     },
                     "amount": {
                         "type": "integer",
@@ -253,7 +253,7 @@ _SCHEMAS: List[Dict[str, Any]] = [
                     },
                     "debt_id": {
                         "type": "integer",
-                        "description": "Debt ID for payment/forgive actions",
+                        "description": "Debt ID (optional - can use counterparty name instead)",
                     },
                     "due_date": {
                         "type": "string",
@@ -332,6 +332,12 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         "enum": ["UZS", "USD", "EUR", "RUB", "GBP"],
                         "description": "Currency",
                     },
+                    "reminder_days_before": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 30,
+                        "description": "Days before due date to send payment reminder (e.g., 3 for 3 days before)",
+                    },
                 },
                 "required": ["action"],
                 "additionalProperties": False,
@@ -390,6 +396,40 @@ _SCHEMAS: List[Dict[str, Any]] = [
             },
         },
     },
+
+    # Quick Reminders (short-term, minutes/hours)
+    {
+        "type": "function",
+        "function": {
+            "name": "set_quick_reminder",
+            "description": "Set a quick reminder for 30 minutes to 24 hours from now. Use for short-term reminders like 'remind me in 1 hour to pay taxi' or 'remind me in 30 minutes about lunch'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "What to remind about (e.g., 'pay taxi', 'call mom', 'lunch payment')",
+                    },
+                    "minutes_from_now": {
+                        "type": "integer",
+                        "minimum": 5,
+                        "maximum": 1440,
+                        "description": "Minutes from now (5 min to 24 hours). Examples: 5, 15, 30, 60, 120",
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "description": "Optional amount if reminder is about a payment",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Optional category for the reminder (e.g., 'transport', 'food')",
+                    },
+                },
+                "required": ["message", "minutes_from_now"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -406,6 +446,7 @@ async def _record_transaction(
     *,
     agent_name: str,
     finance_service: Any,
+    insights_service: Any = None,
     transaction_type: str,
     amount: float,
     category: str,
@@ -441,11 +482,39 @@ async def _record_transaction(
             description=f"record_transaction | type={transaction_type} | amount={amount_cents} | category={category}",
         )
 
-        return {
+        response = {
             "success": True,
             "transaction": result,
             "budget_alert": result.get("budget_alert"),
         }
+
+        # Add contextual insights for better AI responses
+        if insights_service:
+            try:
+                insights = await insights_service.get_post_transaction_insights(
+                    transaction_type=transaction_type,
+                    amount=amount_cents,
+                    category=category.lower(),
+                )
+                if insights:
+                    response["insights"] = [
+                        {"title": i.title, "message": i.message, "type": i.type}
+                        for i in insights
+                    ]
+
+                # For income, add spending context so AI can make relevant observations
+                if transaction_type == "income":
+                    monthly = await insights_service.get_monthly_summary()
+                    response["monthly_context"] = {
+                        "total_expenses": monthly.get("expenses_formatted"),
+                        "top_category": list(monthly.get("by_category", {}).keys())[:1],
+                        "savings_rate": monthly.get("savings_rate"),
+                        "days_remaining": monthly.get("days_remaining"),
+                    }
+            except Exception:
+                pass  # Insights are optional, don't fail the transaction
+
+        return response
     except Exception as e:
         _LOG_STORE.record_action(agent_name, description=f"record_transaction failed | error={e}")
         return {"error": str(e)}
@@ -762,14 +831,38 @@ async def _manage_debt(
             return {"success": True, "debt": result}
 
         elif action == "record_payment":
-            if not debt_id or not amount:
-                return {"error": "debt_id and amount required for record_payment action"}
-            result = await finance_service.record_debt_payment(debt_id, amount)
+            if not amount:
+                return {"error": "amount required for record_payment action"}
+
+            # Find debt by ID or counterparty name
+            target_debt_id = debt_id
+            if not target_debt_id and counterparty:
+                # Find debt by counterparty name
+                debts = await finance_service.get_debts()
+                matching = [
+                    d for d in debts
+                    if d["counterparty"].lower() == counterparty.lower()
+                    and d["status"] == "active"
+                ]
+                if not matching:
+                    return {"error": f"No active debt found with {counterparty}"}
+                if len(matching) > 1:
+                    # Return list of debts to choose from
+                    return {
+                        "error": f"Multiple debts found with {counterparty}. Please specify which one.",
+                        "debts": matching,
+                    }
+                target_debt_id = matching[0]["id"]
+
+            if not target_debt_id:
+                return {"error": "debt_id or counterparty required for record_payment action"}
+
+            result = await finance_service.record_debt_payment(target_debt_id, amount)
             if not result:
                 return {"error": "Debt not found"}
             _LOG_STORE.record_action(
                 agent_name,
-                description=f"manage_debt | action=record_payment | debt_id={debt_id}",
+                description=f"manage_debt | action=record_payment | debt_id={target_debt_id}",
             )
             return {"success": True, "debt": result}
 
@@ -784,19 +877,39 @@ async def _manage_debt(
             return summary
 
         elif action == "forgive":
-            if not debt_id:
-                return {"error": "debt_id required for forgive action"}
-            # Forgive by recording remaining as payment
+            # Find debt by ID or counterparty name
             debts = await finance_service.get_debts()
-            debt = next((d for d in debts if d["id"] == debt_id), None)
-            if not debt:
+            target_debt = None
+
+            if debt_id:
+                target_debt = next((d for d in debts if d["id"] == debt_id), None)
+            elif counterparty:
+                matching = [
+                    d for d in debts
+                    if d["counterparty"].lower() == counterparty.lower()
+                    and d["status"] == "active"
+                ]
+                if not matching:
+                    return {"error": f"No active debt found with {counterparty}"}
+                if len(matching) > 1:
+                    return {
+                        "error": f"Multiple debts found with {counterparty}. Please specify which one.",
+                        "debts": matching,
+                    }
+                target_debt = matching[0]
+            else:
+                return {"error": "debt_id or counterparty required for forgive action"}
+
+            if not target_debt:
                 return {"error": "Debt not found"}
+
+            # Forgive by recording remaining as payment
             result = await finance_service.record_debt_payment(
-                debt_id, debt["remaining_amount"]
+                target_debt["id"], target_debt["remaining_amount"]
             )
             _LOG_STORE.record_action(
                 agent_name,
-                description=f"manage_debt | action=forgive | debt_id={debt_id}",
+                description=f"manage_debt | action=forgive | debt_id={target_debt['id']}",
             )
             return {"success": True, "debt": result, "forgiven": True}
 
@@ -823,6 +936,7 @@ async def _manage_recurring(
     description: Optional[str] = None,
     counterparty: Optional[str] = None,
     currency: Optional[str] = None,
+    reminder_days_before: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Manage recurring transactions."""
     try:
@@ -849,6 +963,7 @@ async def _manage_recurring(
                 description=description,
                 counterparty=counterparty,
                 currency=currency,
+                reminder_days_before=reminder_days_before,
             )
             _LOG_STORE.record_action(
                 agent_name,
@@ -972,6 +1087,92 @@ async def _get_insights(
         return {"error": str(e)}
 
 
+async def _set_quick_reminder(
+    *,
+    agent_name: str,
+    user_id: str,
+    db_session: Any,
+    message: str,
+    minutes_from_now: int,
+    amount: Optional[int] = None,
+    category: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Set a quick reminder using Celery ETA scheduling."""
+    try:
+        # Validate time range (5 min to 24 hours)
+        if minutes_from_now < 5:
+            return {
+                "error": "Minimum reminder time is 5 minutes.",
+            }
+        if minutes_from_now > 1440:  # 24 hours
+            return {
+                "error": "Maximum quick reminder time is 24 hours. Use a recurring reminder for longer durations.",
+            }
+
+        # Calculate remind_at time
+        from datetime import timezone
+        remind_at = datetime.now(timezone.utc) + timedelta(minutes=minutes_from_now)
+
+        # Create reminder in database
+        from server.repositories.quick_reminders import QuickReminderRepository
+        from uuid import UUID
+
+        repo = QuickReminderRepository(db_session, UUID(user_id))
+        reminder = await repo.create(
+            message=message,
+            amount=amount,
+            category=category.lower() if category else None,
+            remind_at=remind_at,
+            status="pending",
+        )
+        await db_session.flush()
+
+        # Schedule Celery task with ETA
+        from server.tasks.reminders import send_quick_reminder
+        task = send_quick_reminder.apply_async(
+            args=[reminder.id],
+            eta=remind_at,
+        )
+
+        # Update reminder with task ID
+        await repo.update(reminder.id, celery_task_id=task.id)
+        await db_session.commit()
+
+        _LOG_STORE.record_action(
+            agent_name,
+            description=f"set_quick_reminder | message={message[:50]} | minutes={minutes_from_now}",
+        )
+
+        # Format friendly time
+        if minutes_from_now < 60:
+            time_str = f"{minutes_from_now} minutes"
+        elif minutes_from_now == 60:
+            time_str = "1 hour"
+        elif minutes_from_now < 120:
+            time_str = f"1 hour {minutes_from_now - 60} minutes"
+        else:
+            hours = minutes_from_now // 60
+            mins = minutes_from_now % 60
+            if mins:
+                time_str = f"{hours} hours {mins} minutes"
+            else:
+                time_str = f"{hours} hours"
+
+        return {
+            "success": True,
+            "reminder_id": reminder.id,
+            "message": message,
+            "remind_at": remind_at.isoformat(),
+            "time_from_now": time_str,
+            "amount": amount,
+            "category": category,
+        }
+
+    except Exception as e:
+        _LOG_STORE.record_action(agent_name, description=f"set_quick_reminder failed | error={e}")
+        return {"error": str(e)}
+
+
 # =============================================================================
 # Registry Builder
 # =============================================================================
@@ -980,6 +1181,8 @@ def build_registry(
     agent_name: str,
     finance_service: Any = None,
     insights_service: Any = None,
+    user_id: Optional[str] = None,
+    db_session: Any = None,
 ) -> Dict[str, Callable[..., Any]]:
     """Return adult finance tool callables bound to agent and service.
 
@@ -987,6 +1190,8 @@ def build_registry(
         agent_name: Name of the execution agent
         finance_service: AdultFinanceService instance
         insights_service: InsightsService instance (optional)
+        user_id: User ID for reminder operations (optional)
+        db_session: Database session for reminder operations (optional)
 
     Returns:
         Dictionary mapping tool names to callables
@@ -994,11 +1199,12 @@ def build_registry(
     if finance_service is None:
         return {}
 
-    return {
+    registry = {
         "record_transaction": partial(
             _record_transaction,
             agent_name=agent_name,
             finance_service=finance_service,
+            insights_service=insights_service,
         ),
         "delete_transaction": partial(
             _delete_transaction,
@@ -1042,6 +1248,17 @@ def build_registry(
             insights_service=insights_service,
         ),
     }
+
+    # Add quick reminder if user_id and db_session provided
+    if user_id and db_session:
+        registry["set_quick_reminder"] = partial(
+            _set_quick_reminder,
+            agent_name=agent_name,
+            user_id=user_id,
+            db_session=db_session,
+        )
+
+    return registry
 
 
 __all__ = [

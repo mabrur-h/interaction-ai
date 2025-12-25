@@ -9,18 +9,14 @@ from server.repositories.execution_logs import ExecutionLogRepository
 from server.repositories.agent_roster import AgentRosterRepository
 from server.repositories.working_memory import WorkingMemoryRepository
 
-# Wally Junior repositories
-from server.repositories.expenses import ExpenseRepository
-from server.repositories.savings_goals import SavingsGoalRepository
-from server.repositories.family import FamilyRepository
-from server.repositories.invite_codes import InviteCodeRepository
-
 # Adult Finance repositories (Poke)
 from server.repositories.transactions import TransactionRepository
 from server.repositories.budgets import BudgetRepository
 from server.repositories.debts import DebtRepository
 from server.repositories.recurring_transactions import RecurringTransactionRepository
 from server.repositories.exchange_rates import ExchangeRateRepository
+from server.repositories.reminder_logs import ReminderLogRepository
+from server.repositories.quick_reminders import QuickReminderRepository
 
 __all__ = [
     "BaseRepository",
@@ -31,15 +27,12 @@ __all__ = [
     "ExecutionLogRepository",
     "AgentRosterRepository",
     "WorkingMemoryRepository",
-    # Wally Junior
-    "ExpenseRepository",
-    "SavingsGoalRepository",
-    "FamilyRepository",
-    "InviteCodeRepository",
     # Adult Finance (Poke)
     "TransactionRepository",
     "BudgetRepository",
     "DebtRepository",
     "RecurringTransactionRepository",
     "ExchangeRateRepository",
+    "ReminderLogRepository",
+    "QuickReminderRepository",
 ]

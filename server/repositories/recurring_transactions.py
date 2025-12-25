@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 from typing import Optional, Sequence
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,3 +146,43 @@ class RecurringTransactionRepository(UserScopedRepository[RecurringTransaction])
                 total += int(amount * multiplier)
 
         return total
+
+
+# ==============================================================================
+# Utility function for system-wide operations (not user-scoped)
+# ==============================================================================
+
+
+async def get_all_due_grouped_by_user(
+    session: AsyncSession,
+) -> dict[UUID, list[RecurringTransaction]]:
+    """Get all due recurring transactions grouped by user_id.
+
+    This is a system-level function for background task processing,
+    not scoped to a single user.
+
+    Args:
+        session: Database session
+
+    Returns:
+        Dict mapping user_id to list of their due recurring transactions
+    """
+    today = date.today()
+    query = (
+        select(RecurringTransaction)
+        .where(
+            RecurringTransaction.is_active == True,
+            RecurringTransaction.next_due_date <= today,
+        )
+        .order_by(RecurringTransaction.user_id)
+    )
+    result = await session.execute(query)
+    items = result.scalars().all()
+
+    grouped: dict[UUID, list[RecurringTransaction]] = {}
+    for item in items:
+        if item.user_id not in grouped:
+            grouped[item.user_id] = []
+        grouped[item.user_id].append(item)
+
+    return grouped

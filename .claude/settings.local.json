@@ -14,7 +14,13 @@
       "Bash(timeout 15 python:*)",
       "Bash(pip show:*)",
       "Bash(git log:*)",
-      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\agents\\\\execution_agent\\\\tools\\\\adult\\\\productivity.py\")"
+      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\agents\\\\execution_agent\\\\tools\\\\adult\\\\productivity.py\")",
+      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\repositories\\\\expenses.py\")",
+      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\repositories\\\\savings_goals.py\")",
+      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\repositories\\\\achievements.py\")",
+      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\repositories\\\\invite_codes.py\")",
+      "Bash(del /f \"d:\\\\openpoke\\\\server\\\\repositories\\\\family.py\")",
+      "Bash(del /f \"d:\\\\openpoke\\\\docs\\\\API_REFERENCE.md\")"
     ],
     "deny": [],
     "ask": []

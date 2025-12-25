@@ -83,3 +83,4 @@ MIT — see [LICENSE](LICENSE).
 
 .\venv\Scripts\activate
 python -m server.server --reload
+alembic -c server/alembic.ini upgrade head

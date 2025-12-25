@@ -51,16 +51,19 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Wally Junior fields
-    user_type: Mapped[str] = mapped_column(String(20), default="adult")  # 'adult' | 'child'
-    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # For child login
-    initial_balance: Mapped[int] = mapped_column(BigInteger, default=0)  # Starting allowance in cents
-
     # Adult finance fields
     primary_currency: Mapped[str] = mapped_column(String(3), default="UZS")  # ISO 4217 code
     currency_settings: Mapped[dict] = mapped_column(
         JSONB, default=dict
     )  # {display_currencies: [], auto_convert: bool}
+    notification_settings: Mapped[dict] = mapped_column(
+        JSONB,
+        default=lambda: {
+            "reminders_enabled": True,
+            "reminder_time": "09:00",
+            "channels": ["in_app"],
+        },
+    )  # {reminders_enabled: bool, reminder_time: "HH:MM", channels: ["in_app", "email"]}
 
     # Relationships
     sessions: Mapped[list["Session"]] = relationship(
@@ -276,148 +279,6 @@ class WorkingMemory(Base):
 
 
 # =============================================================================
-# Wally Junior Models
-# =============================================================================
-
-
-class FamilyRelationship(Base):
-    """Family relationship model - links parents to children."""
-
-    __tablename__ = "family_relationships"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    parent_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    child_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    relationship_type: Mapped[str] = mapped_column(
-        String(50), default="parent"
-    )  # 'parent', 'guardian'
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    # Relationships
-    parent: Mapped["User"] = relationship("User", foreign_keys=[parent_id])
-    child: Mapped["User"] = relationship("User", foreign_keys=[child_id])
-
-    __table_args__ = (
-        UniqueConstraint("parent_id", "child_id", name="uq_family_parent_child"),
-        Index("idx_family_parent", "parent_id"),
-        Index("idx_family_child", "child_id"),
-    )
-
-
-class Expense(Base):
-    """Expense model - manual expense entries for kids."""
-
-    __tablename__ = "expenses"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)  # In cents
-    category: Mapped[str] = mapped_column(
-        String(100), nullable=False
-    )  # food, toys, games, clothes, books, entertainment, other
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    expense_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    # Relationships
-    user: Mapped["User"] = relationship("User")
-
-    __table_args__ = (Index("idx_expenses_user_date", "user_id", "expense_date"),)
-
-
-class SavingsGoal(Base):
-    """Savings goal model - piggy bank targets for kids."""
-
-    __tablename__ = "savings_goals"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    target_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)  # In cents
-    current_amount: Mapped[int] = mapped_column(BigInteger, default=0)  # In cents
-    status: Mapped[str] = mapped_column(
-        String(50), default="active"
-    )  # 'active', 'completed', 'abandoned'
-    emoji: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    # Relationships
-    user: Mapped["User"] = relationship("User")
-
-    __table_args__ = (Index("idx_savings_user_status", "user_id", "status"),)
-
-
-class InviteCode(Base):
-    """Invite code model - for parent-created child accounts."""
-
-    __tablename__ = "invite_codes"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    parent_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    child_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    initial_balance: Mapped[int] = mapped_column(BigInteger, default=0)  # In cents
-    used: Mapped[bool] = mapped_column(Boolean, default=False)
-    used_by: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    # Relationships
-    parent: Mapped["User"] = relationship("User", foreign_keys=[parent_id])
-
-    __table_args__ = (Index("idx_invite_code", "code"),)
-
-
-class Achievement(Base):
-    """Achievement model - badges and rewards for kids."""
-
-    __tablename__ = "achievements"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    achievement_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    earned_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    extra_data: Mapped[dict] = mapped_column(JSONB, default=dict)
-
-    # Relationships
-    user: Mapped["User"] = relationship("User")
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "achievement_type", name="uq_user_achievement"),
-        Index("idx_achievements_user", "user_id"),
-    )
-
-
-# =============================================================================
 # Adult Finance Models (Poke)
 # =============================================================================
 
@@ -596,4 +457,70 @@ class ExchangeRate(Base):
     __table_args__ = (
         UniqueConstraint("from_currency", "to_currency", "date", name="uq_exchange_rate"),
         Index("idx_exchange_rate_lookup", "from_currency", "to_currency", "date"),
+    )
+
+
+class ReminderLog(Base):
+    """Reminder log - tracks sent payment reminders to prevent duplicates."""
+
+    __tablename__ = "reminder_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    recurring_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("recurring_transactions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reminder_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    due_date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    channel: Mapped[str] = mapped_column(String(20), default="in_app")
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    recurring_transaction: Mapped["RecurringTransaction"] = relationship(
+        "RecurringTransaction"
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "recurring_id", "reminder_date", name="uq_reminder_log"
+        ),
+        Index("idx_reminder_logs_user_date", "user_id", "reminder_date"),
+    )
+
+
+class QuickReminder(Base):
+    """Quick reminder - short-term reminders (minutes/hours) via Celery ETA."""
+
+    __tablename__ = "quick_reminders"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    amount: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # Optional amount
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    celery_task_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending"
+    )  # 'pending', 'sent', 'cancelled'
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index("idx_quick_reminders_user_status", "user_id", "status"),
+        Index("idx_quick_reminders_remind_at", "remind_at"),
     )

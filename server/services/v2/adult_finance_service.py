@@ -1,5 +1,6 @@
 """Adult finance service - main business logic for Poke."""
 
+import logging
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,9 @@ from server.repositories.budgets import BudgetRepository
 from server.repositories.debts import DebtRepository
 from server.repositories.recurring_transactions import RecurringTransactionRepository
 from server.services.v2.currency_service import CurrencyService
+from server.utils.frequency import calculate_next_due_date
+
+logger = logging.getLogger(__name__)
 
 
 class AdultFinanceService:
@@ -392,6 +396,7 @@ class AdultFinanceService:
         description: Optional[str] = None,
         counterparty: Optional[str] = None,
         currency: Optional[str] = None,
+        reminder_days_before: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Add a recurring transaction template.
 
@@ -405,6 +410,7 @@ class AdultFinanceService:
             description: Optional description
             counterparty: Optional counterparty
             currency: Currency code
+            reminder_days_before: Days before due date to send reminder
 
         Returns:
             Recurring transaction details
@@ -425,6 +431,7 @@ class AdultFinanceService:
             template=template,
             frequency=frequency,
             next_due_date=start_date,
+            reminder_days_before=reminder_days_before,
         )
 
         if self.auto_commit:
@@ -438,6 +445,7 @@ class AdultFinanceService:
             "amount_formatted": self.currency_service.format_amount(amount, currency),
             "frequency": frequency,
             "next_due_date": start_date.isoformat(),
+            "reminder_days_before": reminder_days_before,
         }
 
     async def get_recurring(self) -> List[Dict[str, Any]]:
@@ -465,6 +473,84 @@ class AdultFinanceService:
                 income - expenses, currency
             ),
         }
+
+    async def process_due_recurring_transactions(self) -> Dict[str, Any]:
+        """Process all due recurring transactions for this user.
+
+        This method is called by the scheduled task to auto-generate transactions
+        from recurring templates when they become due.
+
+        Returns:
+            Dict with processed, failed, and skipped counts
+        """
+        today = date.today()
+        due_items = await self.recurring_repo.get_due_today()
+        results: Dict[str, Any] = {"processed": [], "failed": [], "skipped": []}
+
+        for recurring in due_items:
+            try:
+                # Idempotency check - skip if already processed today
+                if recurring.last_processed_date == today:
+                    results["skipped"].append(recurring.id)
+                    logger.debug(
+                        f"Skipping recurring {recurring.id} - already processed today"
+                    )
+                    continue
+
+                # Create transaction from template
+                template = recurring.template or {}
+                currency = template.get("currency", self.user.primary_currency)
+                amount = template.get("amount", 0)
+
+                # Convert to primary currency if different
+                if currency != self.user.primary_currency:
+                    amount_primary, rate = await self.currency_service.convert(
+                        amount, currency, self.user.primary_currency
+                    )
+                else:
+                    amount_primary = amount
+                    rate = Decimal("1.0")
+
+                # Create the transaction
+                transaction = await self.transaction_repo.create(
+                    type=template.get("type", "expense"),
+                    amount=amount,
+                    currency=currency,
+                    amount_primary=amount_primary,
+                    exchange_rate=float(rate) if rate else None,
+                    category=template.get("category", "uncategorized"),
+                    description=template.get("description"),
+                    counterparty=template.get("counterparty"),
+                    transaction_date=datetime.now(),
+                    is_recurring=True,
+                    recurring_id=recurring.id,
+                    tags=[],
+                )
+
+                # Calculate and set next due date
+                next_due = calculate_next_due_date(recurring.next_due_date, recurring.frequency)
+                await self.recurring_repo.mark_processed(recurring.id, next_due)
+
+                results["processed"].append({
+                    "recurring_id": recurring.id,
+                    "recurring_name": recurring.name,
+                    "transaction_id": transaction.id,
+                    "amount": amount,
+                    "type": template.get("type"),
+                })
+                logger.info(
+                    f"Processed recurring {recurring.id} ({recurring.name}) -> transaction {transaction.id}"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to process recurring {recurring.id}: {e}")
+                results["failed"].append({
+                    "id": recurring.id,
+                    "name": recurring.name,
+                    "error": str(e),
+                })
+
+        return results
 
     # =========================================================================
     # Dashboard / Overview

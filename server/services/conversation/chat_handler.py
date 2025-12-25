@@ -11,17 +11,12 @@ from ...models import ChatMessage, ChatRequest
 from ...repositories.conversations import ConversationRepository
 from ...repositories.working_memory import WorkingMemoryRepository
 from ...repositories.users import UserRepository
-from ...repositories.expenses import ExpenseRepository
-from ...repositories.savings_goals import SavingsGoalRepository
-from ...repositories.achievements import AchievementRepository
 from ...repositories.transactions import TransactionRepository
 from ...repositories.budgets import BudgetRepository
 from ...repositories.debts import DebtRepository
 from ...repositories.recurring_transactions import RecurringTransactionRepository
 from ...repositories.exchange_rates import ExchangeRateRepository
 from ...services.v2 import ConversationService
-from ...services.v2.finance_service import FinanceService
-from ...services.v2.achievements_service import AchievementsService
 from ...services.v2.adult_finance_service import AdultFinanceService
 from ...services.v2.currency_service import CurrencyService
 from ...services.execution import UserContext, set_user_context, clear_user_context
@@ -65,35 +60,13 @@ async def handle_chat_request(
         # Create a new session for the background task
         async with async_session_factory() as session:
             try:
-                # Get user to determine user_type (adult vs child)
+                # Get user
                 user_repo = UserRepository(session)
                 user = await user_repo.get_by_id(user_id)
-                user_type = user.user_type if user else "adult"
 
-                # Create services based on user type
-                finance_service = None
-                achievements_service = None
+                # Create adult finance services
                 adult_finance_service = None
-
-                if user_type == "child" and user:
-                    # Child users get Wally finance tools
-                    expense_repo = ExpenseRepository(session, user_id)
-                    savings_repo = SavingsGoalRepository(session, user_id)
-                    achievement_repo = AchievementRepository(session, user_id)
-
-                    finance_service = FinanceService(
-                        expense_repo=expense_repo,
-                        savings_repo=savings_repo,
-                        user=user,
-                        auto_commit=True,
-                    )
-                    achievements_service = AchievementsService(
-                        achievement_repo=achievement_repo,
-                        auto_commit=True,
-                    )
-
-                elif user_type == "adult" and user:
-                    # Adult users get Poke finance tools
+                if user:
                     transaction_repo = TransactionRepository(session, user_id)
                     budget_repo = BudgetRepository(session, user_id)
                     debt_repo = DebtRepository(session, user_id)
@@ -114,16 +87,11 @@ async def handle_chat_request(
                 # Set user context for execution agents
                 set_user_context(UserContext(
                     user_id=user_id,
-                    user_type=user_type,
-                    finance_service=finance_service,
-                    achievements_service=achievements_service,
                     adult_finance_service=adult_finance_service,
                 ))
 
                 # Sync OAuth connections from DB to V1 singletons for execution agents
-                # Only for adult users (kids don't have Gmail/Calendar)
-                if user_type == "adult":
-                    await sync_oauth_connections_for_user(session, user_id)
+                await sync_oauth_connections_for_user(session, user_id)
 
                 # Create user-scoped conversation service with the new session
                 # auto_commit=True ensures messages are visible to polling immediately
@@ -131,7 +99,7 @@ async def handle_chat_request(
                 wm_repo = WorkingMemoryRepository(session, user_id)
                 conv_service = ConversationService(conv_repo, wm_repo, auto_commit=True)
 
-                runtime = InteractionAgentRuntime(conv_service, user_type=user_type)
+                runtime = InteractionAgentRuntime(conv_service)
                 await runtime.execute(user_message=user_content)
             except ValueError as ve:
                 # Missing API key error

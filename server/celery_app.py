@@ -12,9 +12,9 @@ celery_app = Celery(
     broker=_settings.celery_broker_url,
     backend=_settings.celery_result_backend,
     include=[
-        "server.tasks.triggers",
-        "server.tasks.email_watcher",
         "server.tasks.maintenance",
+        "server.tasks.recurring",
+        "server.tasks.reminders",
     ],
 )
 
@@ -38,27 +38,26 @@ celery_app.conf.update(
     task_default_queue="default",
     task_queues={
         "default": {},
-        "triggers": {},
-        "email": {},
         "maintenance": {},
     },
 
     # Beat schedule for periodic tasks
     beat_schedule={
-        "check-due-triggers": {
-            "task": "server.tasks.triggers.check_due_triggers",
-            "schedule": 60.0,  # Every minute
-            "options": {"queue": "triggers"},
-        },
-        "check-important-emails": {
-            "task": "server.tasks.email_watcher.check_important_emails",
-            "schedule": 300.0,  # Every 5 minutes
-            "options": {"queue": "email"},
-        },
         "cleanup-old-data": {
             "task": "server.tasks.maintenance.cleanup_old_data",
             "schedule": 86400.0,  # Daily
             "options": {"queue": "maintenance"},
+        },
+        # Adult Finance scheduled tasks
+        "process-recurring-transactions": {
+            "task": "server.tasks.recurring.process_recurring_transactions",
+            "schedule": 21600.0,  # Every 6 hours (6 AM, 12 PM, 6 PM, 12 AM)
+            "options": {"queue": "default"},
+        },
+        "send-payment-reminders": {
+            "task": "server.tasks.reminders.send_payment_reminders",
+            "schedule": 32400.0,  # Every 9 hours
+            "options": {"queue": "default"},
         },
     },
 
